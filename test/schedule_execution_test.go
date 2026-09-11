@@ -398,8 +398,56 @@ func TestScenario_SC_19(t *testing.T) {
 		}
 		f.assertReport(t, first, "2026-10-31T05:30:00Z", "2026-11-01T05:30:00Z", []string{"1", "2"})
 		f.assertReport(t, second, "2026-11-01T05:30:00Z", "2026-11-01T06:30:00Z", []string{"3"})
+		t.Run("pending_during_clock_rollback", checkPendingDuringClockRollback)
 	})
 }
+
+func checkPendingDuringClockRollback(t *testing.T) {
+	f := newSchedule(t, "2026-09-10T00:00:00Z")
+	f.events(t, "2026-09-10T00:00:05Z", "2026-09-10T00:00:15Z", "2026-09-10T00:00:20Z", "2026-09-10T00:00:29Z", "2026-09-10T00:00:30Z")
+	f.register(t, "daily", everySchedule("10s"))
+	f.call(t, "schedule", "enable", "daily")
+	writeTest(t, filepath.Join(f.root, "hold"), nil, 0600)
+	f.at(t, "2026-09-10T00:00:10Z")
+	f.daemon(t)
+	first := f.runAt(t, "daily", "2026-09-10T00:00:10Z")
+	f.awaitAgent(t, first)
+	f.at(t, "2026-09-10T00:00:30Z")
+	v := f.observed(t, "daily", "2026-09-10T00:00:30Z")
+	if v["latest_unaccepted_at"] != "2026-09-10T00:00:30Z" || v["last_accepted_at"] != "2026-09-10T00:00:10Z" || v["skipped"] != float64(1) {
+		t.Fatalf("pending opportunity before rollback: %v", v)
+	}
+	f.at(t, "2026-09-10T00:00:15Z")
+	if e := os.Remove(filepath.Join(f.root, "hold")); e != nil {
+		t.Fatal(e)
+	}
+	f.assertReport(t, first, "2026-09-10T00:00:00Z", "2026-09-10T00:00:10Z", []string{"1"})
+	// Keep observing after the blocking run completes, including forward movement
+	// that still falls short of the previously observed clock.
+	for _, at := range []string{"2026-09-10T00:00:15Z", "2026-09-10T00:00:29Z"} {
+		f.at(t, at)
+		until := time.Now().Add(300 * time.Millisecond)
+		for time.Now().Before(until) {
+			v = f.show(t, "daily")
+			if v["observed_at"] != "2026-09-10T00:00:30Z" || v["latest_unaccepted_at"] != "2026-09-10T00:00:30Z" || v["last_accepted_at"] != "2026-09-10T00:00:10Z" || v["skipped"] != float64(1) || f.count(t, "submissions") != 1 || f.count(t, "runs") != 1 {
+				t.Fatalf("pending opportunity changed during clock rollback at %s: %v", at, v)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	f.at(t, "2026-09-10T00:00:30Z")
+	second := f.runAt(t, "daily", "2026-09-10T00:00:30Z")
+	f.assertReport(t, second, "2026-09-10T00:00:20Z", "2026-09-10T00:00:30Z", []string{"3", "4"})
+	f.at(t, "2026-09-10T00:00:40Z")
+	third := f.runAt(t, "daily", "2026-09-10T00:00:40Z")
+	f.assertReport(t, third, "2026-09-10T00:00:30Z", "2026-09-10T00:00:40Z", []string{"5"})
+	v = f.show(t, "daily")
+	if v["observed_at"] != "2026-09-10T00:00:40Z" || v["last_accepted_at"] != "2026-09-10T00:00:40Z" || v["latest_unaccepted_at"] != nil || v["skipped"] != float64(1) || f.count(t, "submissions") != 3 || f.count(t, "runs") != 3 {
+		t.Fatalf("clock recovery replayed or lost opportunities: %v", v)
+	}
+	f.assertReport(t, first, "2026-09-10T00:00:00Z", "2026-09-10T00:00:10Z", []string{"1"})
+}
+
 func TestScenario_SC_36(t *testing.T) {
 	f := newSchedule(t, "2026-09-10T00:00:00Z")
 	f.events(t, "2026-09-10T00:00:05Z", "2026-09-10T00:00:15Z", "2026-09-10T00:00:40Z", "2026-09-10T00:00:56Z")
