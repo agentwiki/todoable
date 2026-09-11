@@ -130,12 +130,50 @@ func assertRuntime(t *testing.T, f runtimeFixture, submitted, view map[string]an
 		t.Fatalf("Run result: %v", view)
 	}
 	steps := view["steps"].([]any)
+	source, err := os.ReadFile(f.input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var request struct {
+		Input struct{ SuccessAt, AgentExit, AfterExit int }
+	}
+	// Decode the independently submitted fixture controls, not persisted results.
+	var fields struct {
+		Input map[string]json.RawMessage `json:"input"`
+	}
+	if err = json.Unmarshal(source, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for key, target := range map[string]*int{"success_at": &request.Input.SuccessAt, "agent_exit": &request.Input.AgentExit, "after_exit": &request.Input.AfterExit} {
+		if raw, ok := fields.Input[key]; ok {
+			if err = json.Unmarshal(raw, target); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	expectedCall := 0
 	actual := []string{}
 	for _, item := range steps {
 		step := item.(map[string]any)
 		actual = append(actual, step["stage"].(string))
 		if step["result"] == nil {
 			t.Fatal("missing result")
+		}
+		exit := 0
+		switch step["stage"] {
+		case "agent":
+			expectedCall++
+			exit = request.Input.AgentExit
+		case "finish_check":
+			if expectedCall < request.Input.SuccessAt {
+				exit = 1
+			}
+		case "after":
+			exit = request.Input.AfterExit
+		}
+		result := step["result"].(map[string]any)
+		if result["kind"] != "exited" || result["exit_code"] != float64(exit) || step["call_index"] != float64(expectedCall) {
+			t.Fatalf("recorded Step result disagrees with fixture: stage=%s kind=%v exit=%v call=%v want exit=%d call=%d", step["stage"], result["kind"], result["exit_code"], step["call_index"], exit, expectedCall)
 		}
 	}
 	if !reflect.DeepEqual(actual, stages) {
@@ -241,6 +279,16 @@ func contractExecution(t *testing.T) {
 	view := f.await(t, id)
 	assertRuntime(t, f, submitted, view, "succeeded", 1, append(runtimeStages(1), "after"))
 	records := f.recordsFor(t, id)
+	startFeedback := map[string]any{"kind": "start", "exit_code": float64(0), "stdout": "", "stderr": "", "truncated": false}
+	finishFalse := map[string]any{"kind": "finish", "exit_code": float64(1), "stdout": "�" + strings.Repeat("O", 8191), "stderr": "�" + strings.Repeat("E", 8191), "truncated": true}
+	finishTrue := map[string]any{"kind": "finish", "exit_code": float64(0), "stdout": "�" + strings.Repeat("O", 8191), "stderr": "�" + strings.Repeat("E", 8191), "truncated": true}
+	// The seven expected contexts follow this fixture's independent command script.
+	wantFeedback := []any{nil, startFeedback, startFeedback, startFeedback, finishFalse, finishFalse, finishTrue}
+	wantCalls := []float64{0, 0, 0, 0, 1, 1, 1}
+	stepIndex := map[string]int{}
+	for index, item := range view["steps"].([]any) {
+		stepIndex[item.(map[string]any)["step_id"].(string)] = index
+	}
 	stages := map[string]int{}
 	for _, record := range records {
 		c := record["context"].(map[string]any)
@@ -254,12 +302,15 @@ func contractExecution(t *testing.T) {
 		if input["value"] != "$(touch NEVER)" || input["success_at"] != float64(1) {
 			t.Fatalf("input changed %v", input)
 		}
-		wantCall := float64(0)
-		if stage == "agent" || stage == "after" {
-			wantCall = 1
+		index, ok := stepIndex[c["step_id"].(string)]
+		if !ok || index >= len(wantFeedback) {
+			t.Fatalf("external Step absent from persisted order: %v", c)
 		}
-		if stage != "finish_check" && c["call_index"] != wantCall {
-			t.Fatalf("call index %v", c)
+		if c["call_index"] != wantCalls[index] {
+			t.Fatalf("Step %d call index %v want %v", index, c["call_index"], wantCalls[index])
+		}
+		if !reflect.DeepEqual(c["last_check"], wantFeedback[index]) {
+			t.Fatalf("Step %d (%s) last_check mismatch: got %v want %v", index, stage, c["last_check"], wantFeedback[index])
 		}
 		reserved := map[string]string{"TODOABLE_CONTEXT_PATH": record["context_path"].(string), "TODOABLE_RUN_DIR": filepath.Join(f.dir, "runs", id), "TODOABLE_TASK_ID": "runtime", "TODOABLE_TASK_VERSION": "1", "TODOABLE_SUBMISSION_ID": submitted["submission_id"].(string), "TODOABLE_RUN_ID": id, "TODOABLE_STEP_ID": c["step_id"].(string), "TODOABLE_CALL_INDEX": fmt.Sprint(c["call_index"])}
 		for k, v := range reserved {
@@ -288,16 +339,7 @@ func contractExecution(t *testing.T) {
 		} else if record["stdin"] != "" {
 			t.Fatalf("hook/check stdin nonempty %v", record)
 		}
-		if stage == "agent" || stage == "after" {
-			feedback := c["last_check"].(map[string]any)
-			exit := float64(1)
-			if stage == "after" {
-				exit = 0
-			}
-			if feedback["kind"] != "finish" || feedback["exit_code"] != exit || feedback["stdout"] != "�"+strings.Repeat("O", 8191) || feedback["stderr"] != "�"+strings.Repeat("E", 8191) || feedback["truncated"] != true {
-				t.Fatalf("feedback contract %v", feedback)
-			}
-		}
+
 	}
 	for _, stage := range []string{"start_check", "before", "finish_check", "agent", "after"} {
 		if stages[stage] == 0 {

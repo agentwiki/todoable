@@ -349,13 +349,18 @@ func groupAlive(pgid int) (bool, error) {
 	if err != nil {
 		return true, err
 	}
+	return scanProcessGroup(entries, pgid, processFields)
+}
+
+func scanProcessGroup(entries []os.DirEntry, pgid int, read func(int) ([]string, error)) (bool, error) {
 	for _, entry := range entries {
 		pid, parseErr := strconv.Atoi(entry.Name())
 		if parseErr != nil {
 			continue
 		}
-		fields, readErr := processFields(pid)
-		if os.IsNotExist(readErr) {
+		fields, readErr := read(pid)
+		// A process may disappear after ReadDir and before its proc stat read.
+		if os.IsNotExist(readErr) || errors.Is(readErr, syscall.ESRCH) {
 			continue
 		}
 		if readErr != nil {
