@@ -2,8 +2,11 @@ package test
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestScenario_SC_01: 동일 입력을 동시에 여러 번 접수
@@ -189,35 +192,73 @@ func TestScenario_SC_10(t *testing.T) {
 
 // TestScenario_SC_11: 최초 종료검사 참
 func TestScenario_SC_11(t *testing.T) {
-	todo(t, "SC-11")
 	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-11")
+		f := newRuntime(t)
+		gate := filepath.Join(f.root, "release")
+		submitted := f.submit(t, map[string]any{"after_gate": gate})
+		f.daemon(t)
+		id := submitted["run_id"].(string)
+		deadline := time.Now().Add(5 * time.Second)
+		found := false
+		for time.Now().Before(deadline) {
+			for _, r := range f.recordsFor(t, id) {
+				if r["context"].(map[string]any)["stage"] == "after" {
+					found = true
+				}
+			}
+			if found {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if !found {
+			t.Fatal("after never started")
+		}
+		view := f.call(t, "run", "show", id, "--json")
+		if view["state"] != "running" || view["calls_used"] != float64(0) {
+			t.Fatalf("premature completion %v", view)
+		}
+		writeTest(t, gate, nil, 0600)
+		view = f.await(t, id)
+		assertRuntime(t, f, submitted, view, "succeeded", 0, append(runtimeStages(0), "after"))
+		if b, e := os.ReadFile(filepath.Join(f.dir, "runs", id, "published")); e != nil || string(b) != "published" {
+			t.Fatalf("after effect %q %v", b, e)
+		}
 	})
 	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-11")
+		f := newRuntime(t)
+		submitted := f.submit(t, map[string]any{"after_exit": 7})
+		f.daemon(t)
+		view := f.await(t, submitted["run_id"].(string))
+		assertRuntime(t, f, submitted, view, "failed:after", 0, append(runtimeStages(0), "after"))
 	})
 }
 
 // TestScenario_SC_12: 마지막 허용 agent 호출 뒤 검사 참
 func TestScenario_SC_12(t *testing.T) {
-	todo(t, "SC-12")
 	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-12")
+		f := newRuntime(t)
+		submitted := f.submit(t, map[string]any{"success_at": 3})
+		f.daemon(t)
+		view := f.await(t, submitted["run_id"].(string))
+		assertRuntime(t, f, submitted, view, "succeeded", 3, append(runtimeStages(3), "after"))
 	})
 	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-12")
+		f := newRuntime(t)
+		submitted := f.submit(t, map[string]any{"success_at": 4})
+		f.daemon(t)
+		view := f.await(t, submitted["run_id"].(string))
+		assertRuntime(t, f, submitted, view, "failed:max_calls", 3, runtimeStages(3))
+		if b, e := os.ReadFile(filepath.Join(f.dir, "runs", submitted["run_id"].(string), "artifact")); e != nil || string(b) != "effect-3" {
+			t.Fatalf("agent output %q %v", b, e)
+		}
 	})
 }
 
 // TestScenario_SC_13: agent 정상 비영 코드, 종료검사 참
 func TestScenario_SC_13(t *testing.T) {
-	todo(t, "SC-13")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-13")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-13")
-	})
+	verify(t, "V-01", func(t *testing.T) { assertNonzero(t, 1) })
+	verify(t, "V-02", func(t *testing.T) { assertNonzero(t, 4) })
 }
 
 // TestScenario_SC_14: after 정상 실패
@@ -469,13 +510,8 @@ func TestScenario_SC_33(t *testing.T) {
 
 // TestScenario_SC_34: 환경·컨텍스트·명령 실행 계약
 func TestScenario_SC_34(t *testing.T) {
-	todo(t, "SC-34")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-34")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-34")
-	})
+	verify(t, "V-01", func(t *testing.T) { contractExecution(t) })
+	verify(t, "V-02", func(t *testing.T) { contractRejections(t); missingWorkdirStages(t) })
 }
 
 // TestScenario_SC_35: 시작 재확인과 단계별 실패

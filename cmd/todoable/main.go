@@ -16,6 +16,9 @@ func run(args []string) int {
 		dir = args[1]
 		args = args[2:]
 	}
+	if len(args) == 2 && args[0] == "daemon" && args[1] == "run" {
+		return daemon(dir)
+	}
 	if len(args) < 3 {
 		return local.Fail(domain.Invalid("supported: task register FILE, run submit FILE, run show ID --json"))
 	}
@@ -79,4 +82,33 @@ func run(args []string) int {
 		return local.Fail(err)
 	}
 	return 0
+}
+
+func daemon(dir string) int {
+	store, err := local.Open(dir)
+	if err != nil {
+		return local.Fail(err)
+	}
+	defer func() { _ = store.Close() }()
+	d, err := store.Daemon()
+	if err != nil {
+		return local.Fail(err)
+	}
+	defer func() { _ = d.Close() }()
+	runner := store.Executor()
+	for {
+		if d.Context().Err() != nil {
+			return 0
+		}
+		worked, e := usecases.Advance(d.Context(), store, runner)
+		if e != nil {
+			if d.Stopped(e) {
+				return 0
+			}
+			return local.Fail(e)
+		}
+		if !worked && !d.Pause() {
+			return 0
+		}
+	}
 }

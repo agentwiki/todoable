@@ -15,7 +15,10 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db  *sql.DB
+	dir string
+}
 
 func Open(dir string) (*Store, error) {
 	if e := os.MkdirAll(dir, 0700); e != nil {
@@ -47,7 +50,12 @@ func Open(dir string) (*Store, error) {
 		_ = db.Close()
 		return nil, e
 	}
-	return &Store{db}, nil
+	s := &Store{db: db, dir: filepath.Dir(path)}
+	if e = s.initRuntime(); e != nil {
+		_ = db.Close()
+		return nil, e
+	}
+	return s, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
 func (s *Store) Register(task domain.Task) (int, error) {
@@ -196,5 +204,6 @@ func (s *Store) Run(id string) (map[string]any, error) {
 	if e != nil {
 		return nil, e
 	}
-	return map[string]any{"protocol_version": 1, "task_id": task, "task_version": version, "input_key": inputKey, "input": json.RawMessage(input), "submission_id": submission, "run_id": id, "run_seq": seq, "state": state, "stage": "waiting", "calls_used": calls, "repeat": total, "repeat_remaining": remaining, "concurrency_key": concurrency, "predecessor": nil, "next_check_at": nil, "scheduled_at": nil, "last_check": nil, "time_remaining": nil, "cancel_requested": false, "blocked_reason": nil, "steps": []any{}}, nil
+	out := map[string]any{"protocol_version": 1, "task_id": task, "task_version": version, "input_key": inputKey, "input": json.RawMessage(input), "submission_id": submission, "run_id": id, "run_seq": seq, "state": state, "stage": "waiting", "calls_used": calls, "repeat": total, "repeat_remaining": remaining, "concurrency_key": concurrency, "predecessor": nil, "next_check_at": nil, "scheduled_at": nil, "last_check": nil, "time_remaining": nil, "cancel_requested": false, "blocked_reason": nil, "steps": []any{}}
+	return s.runtimeView(id, out)
 }
