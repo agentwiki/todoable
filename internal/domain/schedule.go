@@ -181,9 +181,28 @@ func (r ScheduleRule) Next(after, anchor time.Time) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	limit := after.AddDate(8, 0, 0)
-	for t := after.UTC().Truncate(time.Minute).Add(time.Minute); !t.After(limit); t = t.Add(time.Minute) {
-		if r.cronMatches(t) {
-			return t, true
+	for cursor := after.UTC().Add(time.Nanosecond); !cursor.After(limit); {
+		local := cursor.In(r.location)
+		_, zoneEnd := local.ZoneBounds()
+		candidate := localMinuteFloor(local).UTC()
+		if candidate.Before(cursor) {
+			candidate = candidate.Add(time.Minute)
+		}
+		// A zone change can shift the local minute grid by seconds. Do not
+		// carry the preceding zone's grid across that transition.
+		if !zoneEnd.IsZero() && !candidate.Before(zoneEnd) {
+			cursor = zoneEnd.UTC()
+			continue
+		}
+		if candidate.After(limit) {
+			break
+		}
+		if r.cronMatches(candidate) {
+			return candidate, true
+		}
+		cursor = candidate.Add(time.Minute)
+		if !zoneEnd.IsZero() && !cursor.Before(zoneEnd) {
+			cursor = zoneEnd.UTC()
 		}
 	}
 	return time.Time{}, false
@@ -203,12 +222,32 @@ func (r ScheduleRule) Previous(at, anchor time.Time) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	limit := at.AddDate(-8, 0, 0)
-	for t := at.UTC().Add(-time.Minute); !t.Before(limit); t = t.Add(-time.Minute) {
-		if r.cronMatches(t) {
-			return t, true
+	for cursor := at.UTC().Add(-time.Nanosecond); !cursor.Before(limit); {
+		local := cursor.In(r.location)
+		zoneStart, _ := local.ZoneBounds()
+		candidate := localMinuteFloor(local).UTC()
+		if !zoneStart.IsZero() && candidate.Before(zoneStart) {
+			cursor = zoneStart.UTC().Add(-time.Nanosecond)
+			continue
+		}
+		if candidate.Before(limit) {
+			break
+		}
+		if r.cronMatches(candidate) {
+			return candidate, true
+		}
+		cursor = candidate.Add(-time.Minute)
+		if !zoneStart.IsZero() && cursor.Before(zoneStart) {
+			cursor = zoneStart.UTC().Add(-time.Nanosecond)
 		}
 	}
 	return time.Time{}, false
+}
+
+// Subtract the local seconds rather than truncating UTC: historical IANA
+// offsets need not be multiples of a minute (for example Monrovia -00:44:30).
+func localMinuteFloor(local time.Time) time.Time {
+	return local.Add(-time.Duration(local.Second())*time.Second - time.Duration(local.Nanosecond()))
 }
 
 type ActivationPeriod struct {

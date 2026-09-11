@@ -167,3 +167,37 @@ func TestScheduleObservedAcceptanceAndNoAliasing(t *testing.T) {
 		t.Fatalf("accepted periods counted %+v", cursor)
 	}
 }
+
+func TestScheduleHistoricalSecondOffset(t *testing.T) {
+	r := scheduleRule(t, "", "0 0 * * *", "Africa/Monrovia")
+	for _, tt := range []struct{ after, want string }{
+		{"1972-01-05T00:44:30Z", "1972-01-06T00:44:30Z"},
+		{"1972-01-06T00:44:29.999999999Z", "1972-01-06T00:44:30Z"},
+		// The shift from -00:44:30 to UTC skips January 7's local midnight.
+		{"1972-01-06T00:44:30Z", "1972-01-08T00:00:00Z"},
+		{"1972-01-07T00:44:29Z", "1972-01-08T00:00:00Z"},
+	} {
+		got, ok := r.Next(scheduleTime(tt.after), time.Time{})
+		if !ok || got.Format(time.RFC3339Nano) != tt.want {
+			t.Fatalf("next after %s: %s %v; want %s", tt.after, got, ok, tt.want)
+		}
+	}
+	for _, tt := range []struct{ at, start string }{
+		{"1972-01-06T00:44:30Z", "1972-01-05T00:44:30Z"},
+		{"1972-01-08T00:00:00Z", "1972-01-06T00:44:30Z"},
+	} {
+		got, e := r.Window(scheduleTime(tt.at), nil)
+		if e != nil || got.WindowStart != tt.start || got.WindowEnd != tt.at {
+			t.Fatalf("window at %s: %+v %v", tt.at, got, e)
+		}
+	}
+	minute := scheduleRule(t, "", "* * * * *", "Africa/Monrovia")
+	got, ok := minute.Next(scheduleTime("1972-01-07T00:44:30Z"), time.Time{})
+	if !ok || got.Format(time.RFC3339) != "1972-01-07T00:45:00Z" {
+		t.Fatalf("new grid %v %v", got, ok)
+	}
+	window, e := minute.Window(scheduleTime("1972-01-07T00:45:00Z"), nil)
+	if e != nil || window.WindowStart != "1972-01-07T00:43:30Z" {
+		t.Fatalf("previous grid %+v %v", window, e)
+	}
+}
