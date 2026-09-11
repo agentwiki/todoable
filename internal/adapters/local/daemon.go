@@ -51,3 +51,5 @@ func (d *Daemon) Stopped(err error) bool {
 	return errors.Is(err, context.Canceled) || d.context.Err() != nil
 }
 func (s *Store) Executor() *Runner { return &Runner{Dir: s.dir, Started: s.Started} }
+
+func (d *Daemon) Stop() { d.stop() }

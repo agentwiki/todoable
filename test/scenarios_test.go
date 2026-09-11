@@ -93,35 +93,20 @@ func TestScenario_SC_03(t *testing.T) {
 
 // TestScenario_SC_04: 같은 키의 A 실행 중 B·C 접수
 func TestScenario_SC_04(t *testing.T) {
-	todo(t, "SC-04")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-04")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-04")
-	})
+	verify(t, "V-01", func(t *testing.T) { inputOrder(t, false) })
+	verify(t, "V-02", func(t *testing.T) { inputOrder(t, true); blockedPredecessor(t) })
 }
 
 // TestScenario_SC_05: A → B 뒤 과거 A 재전송
 func TestScenario_SC_05(t *testing.T) {
-	todo(t, "SC-05")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-05")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-05")
-	})
+	verify(t, "V-01", func(t *testing.T) { scenarioPastInputV1(t) })
+	verify(t, "V-02", func(t *testing.T) { scenarioPastInputV2(t) })
 }
 
 // TestScenario_SC_06: Task 갱신 중 접수 경합
 func TestScenario_SC_06(t *testing.T) {
-	todo(t, "SC-06")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-06")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-06")
-	})
+	verify(t, "V-01", func(t *testing.T) { scenarioVersionRaceV1(t) })
+	verify(t, "V-02", func(t *testing.T) { scenarioVersionRaceV2(t) })
 }
 
 // TestScenario_SC_07: Task 갱신 뒤 버전 생략 재전송
@@ -181,13 +166,9 @@ func TestScenario_SC_09(t *testing.T) {
 
 // TestScenario_SC_10: Run 반복과 다른 입력의 자원 경쟁
 func TestScenario_SC_10(t *testing.T) {
-	todo(t, "SC-10")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-10")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-10")
-	})
+	p := newFair(t)
+	verify(t, "V-01", func(t *testing.T) { fairFirst(t, p) })
+	verify(t, "V-02", func(t *testing.T) { fairSecond(t, p) })
 }
 
 // TestScenario_SC_11: 최초 종료검사 참
@@ -263,24 +244,14 @@ func TestScenario_SC_13(t *testing.T) {
 
 // TestScenario_SC_14: after 정상 실패
 func TestScenario_SC_14(t *testing.T) {
-	todo(t, "SC-14")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-14")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-14")
-	})
+	verify(t, "V-01", func(t *testing.T) { afterRepeat(t, false) })
+	verify(t, "V-02", func(t *testing.T) { afterRepeat(t, true) })
 }
 
 // TestScenario_SC_15: 조건이 계속 거짓
 func TestScenario_SC_15(t *testing.T) {
-	todo(t, "SC-15")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-15")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-15")
-	})
+	verify(t, "V-01", func(t *testing.T) { startWaiting(t, false) })
+	verify(t, "V-02", func(t *testing.T) { startWaiting(t, true) })
 }
 
 // TestScenario_SC_16: 긴 정기 작업 중 여러 시각 도래

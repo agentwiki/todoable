@@ -7,6 +7,7 @@ import (
 	"github.com/agentwiki/todoable/internal/usecases"
 	"os"
 	"strconv"
+	"sync"
 )
 
 func main() { os.Exit(run(os.Args[1:])) }
@@ -96,19 +97,29 @@ func daemon(dir string) int {
 	}
 	defer func() { _ = d.Close() }()
 	runner := store.Executor()
-	for {
-		if d.Context().Err() != nil {
-			return 0
-		}
-		worked, e := usecases.Advance(d.Context(), store, runner)
-		if e != nil {
-			if d.Stopped(e) {
-				return 0
+	var workers sync.WaitGroup
+	errors := make(chan error, 6)
+	for range 6 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for d.Context().Err() == nil {
+				worked, e := usecases.Advance(d.Context(), store, runner)
+				if e != nil {
+					errors <- e
+					d.Stop()
+					return
+				}
+				if !worked && !d.Pause() {
+					return
+				}
 			}
-			return local.Fail(e)
-		}
-		if !worked && !d.Pause() {
-			return 0
-		}
+		}()
 	}
+	workers.Wait()
+	close(errors)
+	for e := range errors {
+		return local.Fail(e)
+	}
+	return 0
 }

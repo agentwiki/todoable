@@ -14,7 +14,8 @@ func (s *Store) initRuntime() error {
 	_, e := s.db.Exec(`CREATE TABLE IF NOT EXISTS runtime(run_id TEXT PRIMARY KEY REFERENCES runs(id),stage TEXT NOT NULL,phase TEXT NOT NULL DEFAULT '',last_check TEXT,remaining_ns INTEGER NOT NULL,next_at INTEGER NOT NULL DEFAULT 0,owner_version INTEGER NOT NULL DEFAULT 0);
  CREATE TABLE IF NOT EXISTS resources(key TEXT PRIMARY KEY,run_id TEXT NOT NULL UNIQUE REFERENCES runs(id));
  CREATE TABLE IF NOT EXISTS steps(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,run_id TEXT NOT NULL REFERENCES runs(id),stage TEXT NOT NULL,call_index INTEGER NOT NULL,owner_version INTEGER NOT NULL,result TEXT,pid INTEGER,pgid INTEGER,boot_id TEXT,process_start TEXT);
- CREATE TABLE IF NOT EXISTS ready_queue(seq INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL UNIQUE REFERENCES runs(id));`)
+ CREATE TABLE IF NOT EXISTS ready_queue(seq INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL UNIQUE REFERENCES runs(id));
+ CREATE TABLE IF NOT EXISTS run_schedule(run_id TEXT PRIMARY KEY REFERENCES runs(id),eligible_at INTEGER NOT NULL DEFAULT 0,start_started_at INTEGER NOT NULL DEFAULT 0,wait_deadline INTEGER NOT NULL DEFAULT 0,ready_seq INTEGER NOT NULL DEFAULT 0,slot_held INTEGER NOT NULL DEFAULT 0);`)
 	return e
 }
 func (s *Store) Reserve() (*domain.Execution, error) {
@@ -23,50 +24,21 @@ func (s *Store) Reserve() (*domain.Execution, error) {
 		return nil, e
 	}
 	defer func() { _ = tx.Rollback() }()
-	rows, e := tx.Query(`SELECT r.id,s.snapshot FROM runs r JOIN submissions s ON s.id=r.submission_id LEFT JOIN runtime rt ON rt.run_id=r.id WHERE rt.run_id IS NULL AND r.state='waiting'`)
-	if e != nil {
+	now := time.Now().UnixNano()
+	if e = initializeRuntime(tx, now); e != nil {
 		return nil, e
-	}
-	type initRun struct{ id, snapshot string }
-	var pending []initRun
-	for rows.Next() {
-		var p initRun
-		if e = rows.Scan(&p.id, &p.snapshot); e != nil {
-			_ = rows.Close()
-			return nil, e
-		}
-		pending = append(pending, p)
-	}
-	e = rows.Err()
-	_ = rows.Close()
-	if e != nil {
-		return nil, e
-	}
-	for _, p := range pending {
-		var task domain.Task
-		if e = json.Unmarshal([]byte(p.snapshot), &task); e != nil {
-			return nil, e
-		}
-		budget, _ := time.ParseDuration(task.Limits["run_timeout"])
-		stage := "ready"
-		phase := ""
-		if task.Start != nil {
-			stage = "start_check"
-			phase = "preflight"
-		}
-		if _, e = tx.Exec("INSERT INTO runtime(run_id,stage,phase,remaining_ns) VALUES(?,?,?,?)", p.id, stage, phase, int64(budget)); e != nil {
-			return nil, e
-		}
-		if stage == "ready" {
-			if _, e = tx.Exec("INSERT INTO ready_queue(run_id) VALUES(?)", p.id); e != nil {
-				return nil, e
-			}
-		}
 	}
 	var x domain.Execution
 	var snap, last, input string
-	var remaining int64
-	e = tx.QueryRow(`SELECT r.id,r.submission_id,s.task_id,s.task_version,s.input_key,s.input,r.run_seq,r.calls_used,s.snapshot,rt.stage,rt.phase,coalesce(rt.last_check,'null'),rt.remaining_ns FROM runs r JOIN submissions s ON s.id=r.submission_id JOIN runtime rt ON rt.run_id=r.id LEFT JOIN ready_queue q ON q.run_id=r.id WHERE r.state IN ('waiting','running') AND rt.next_at<=? AND NOT EXISTS(SELECT 1 FROM steps st WHERE st.run_id=r.id AND st.result IS NULL) AND NOT EXISTS(SELECT 1 FROM submissions older WHERE older.task_id=s.task_id AND older.input_key=s.input_key AND older.seq<s.seq AND older.state='active') AND (rt.stage!='ready' OR NOT EXISTS(SELECT 1 FROM resources WHERE key=s.concurrency_key)) ORDER BY CASE WHEN r.state='running' THEN 0 ELSE 1 END,coalesce(q.seq,s.seq) LIMIT 1`, time.Now().UnixNano()).Scan(&x.RunID, &x.SubmissionID, &x.TaskID, &x.TaskVersion, &x.InputKey, &input, &x.RunSeq, &x.CallIndex, &snap, &x.Stage, &x.Phase, &last, &remaining)
+	var remaining, started, deadline int64
+	e = tx.QueryRow(`SELECT r.id,r.submission_id,s.task_id,s.task_version,s.input_key,s.input,r.run_seq,r.calls_used,s.snapshot,rt.stage,rt.phase,coalesce(rt.last_check,'null'),rt.remaining_ns,rs.start_started_at,rs.wait_deadline
+ FROM runs r JOIN submissions s ON s.id=r.submission_id JOIN runtime rt ON rt.run_id=r.id JOIN run_schedule rs ON rs.run_id=r.id LEFT JOIN ready_queue q ON q.run_id=r.id
+ WHERE r.state IN ('waiting','running') AND (rt.next_at<=? OR (rs.wait_deadline>0 AND rs.wait_deadline<=? AND rt.stage='start_check' AND rt.phase='preflight'))
+ AND NOT EXISTS(SELECT 1 FROM steps st WHERE st.run_id=r.id AND st.result IS NULL)
+ AND NOT EXISTS(SELECT 1 FROM submissions older WHERE older.task_id=s.task_id AND older.input_key=s.input_key AND older.seq<s.seq AND older.state='active')
+ AND (rt.stage!='ready' OR (NOT EXISTS(SELECT 1 FROM resources WHERE key=s.concurrency_key) AND (SELECT count(*) FROM run_schedule WHERE slot_held=1)<2))
+ AND ((rt.stage NOT IN ('start_check','finish_check') AND (rt.stage!='ready' OR json_type(s.snapshot,'$.start') IS NULL)) OR (SELECT count(*) FROM steps WHERE stage IN ('start_check','finish_check') AND result IS NULL)<4)
+ ORDER BY CASE WHEN r.state='running' THEN 0 WHEN rt.stage='start_check' THEN 1 ELSE 2 END,coalesce(q.seq,s.seq) LIMIT 1`, now, now).Scan(&x.RunID, &x.SubmissionID, &x.TaskID, &x.TaskVersion, &x.InputKey, &input, &x.RunSeq, &x.CallIndex, &snap, &x.Stage, &x.Phase, &last, &remaining, &started, &deadline)
 	if errors.Is(e, sql.ErrNoRows) {
 		return nil, tx.Commit()
 	}
@@ -80,11 +52,37 @@ func (s *Store) Reserve() (*domain.Execution, error) {
 	if e = json.Unmarshal([]byte(last), &x.LastCheck); e != nil {
 		return nil, e
 	}
+	if x.Stage == "start_check" && x.Phase == "preflight" {
+		if deadline > 0 && deadline <= now {
+			if _, e = tx.Exec("UPDATE runs SET state='skipped' WHERE id=?", x.RunID); e != nil {
+				return nil, e
+			}
+			if _, e = tx.Exec("UPDATE runtime SET stage='skipped:start_timeout' WHERE run_id=?", x.RunID); e != nil {
+				return nil, e
+			}
+			if e = finishRun(tx, x); e != nil {
+				return nil, e
+			}
+			return nil, tx.Commit()
+		}
+		if started == 0 {
+			wait, _ := time.ParseDuration(x.Task.Start.WaitTimeout)
+			if wait > 0 {
+				deadline = now + int64(wait)
+			}
+			if _, e = tx.Exec("UPDATE run_schedule SET start_started_at=?,wait_deadline=? WHERE run_id=?", now, deadline, x.RunID); e != nil {
+				return nil, e
+			}
+		}
+	}
 	if x.Stage == "ready" {
 		if _, e = tx.Exec("INSERT INTO resources(key,run_id) SELECT concurrency_key,? FROM submissions WHERE id=?", x.RunID, x.SubmissionID); e != nil {
 			return nil, e
 		}
 		if _, e = tx.Exec("DELETE FROM ready_queue WHERE run_id=?", x.RunID); e != nil {
+			return nil, e
+		}
+		if _, e = tx.Exec("UPDATE run_schedule SET slot_held=1 WHERE run_id=?", x.RunID); e != nil {
 			return nil, e
 		}
 		x.Phase = "claimed"
@@ -186,8 +184,11 @@ func (s *Store) Complete(x domain.Execution, o domain.Outcome, next string) erro
 		if _, e = tx.Exec("DELETE FROM resources WHERE run_id=?", x.RunID); e != nil {
 			return e
 		}
+		if _, e = tx.Exec("UPDATE run_schedule SET slot_held=0 WHERE run_id=?", x.RunID); e != nil {
+			return e
+		}
 		if next == "ready" {
-			if _, e = tx.Exec("INSERT INTO ready_queue(run_id) VALUES(?)", x.RunID); e != nil {
+			if e = enqueueReady(tx, x.RunID); e != nil {
 				return e
 			}
 		}
@@ -202,31 +203,17 @@ func (s *Store) Complete(x domain.Execution, o domain.Outcome, next string) erro
 	if _, e = tx.Exec("UPDATE runs SET state=? WHERE id=?", state, x.RunID); e != nil {
 		return e
 	}
-	if terminal {
-		if _, e = tx.Exec("DELETE FROM resources WHERE run_id=?", x.RunID); e != nil {
+	if strings.HasPrefix(next, "blocked:") && next != "blocked:process_unknown" {
+		if _, e = tx.Exec("UPDATE run_schedule SET slot_held=0 WHERE run_id=?", x.RunID); e != nil {
 			return e
-		}
-		var remaining int
-		if e = tx.QueryRow("SELECT remaining FROM repeat_budgets WHERE submission_id=?", x.SubmissionID).Scan(&remaining); e != nil {
-			return e
-		}
-		if remaining > 0 {
-			id, err := uuid()
-			if err != nil {
-				return err
-			}
-			if _, e = tx.Exec("UPDATE repeat_budgets SET remaining=remaining-1 WHERE submission_id=?", x.SubmissionID); e != nil {
-				return e
-			}
-			if _, e = tx.Exec("INSERT INTO runs(id,submission_id,run_seq,state) VALUES(?,?,?,'waiting')", id, x.SubmissionID, x.RunSeq+1); e != nil {
-				return e
-			}
-		} else {
-			if _, e = tx.Exec("UPDATE submissions SET state='completed' WHERE id=?", x.SubmissionID); e != nil {
-				return e
-			}
 		}
 	}
+	if terminal {
+		if e = finishRun(tx, x); e != nil {
+			return e
+		}
+	}
+
 	return tx.Commit()
 }
 func (s *Store) runtimeView(id string, out map[string]any) (map[string]any, error) {
@@ -234,7 +221,7 @@ func (s *Store) runtimeView(id string, out map[string]any) (map[string]any, erro
 	var budget int64
 	e := s.db.QueryRow("SELECT stage,coalesce(last_check,'null'),remaining_ns FROM runtime WHERE run_id=?", id).Scan(&stage, &last, &budget)
 	if errors.Is(e, sql.ErrNoRows) {
-		return out, nil
+		return s.viewSummary(id, out)
 	}
 	if e != nil {
 		return nil, e
@@ -269,5 +256,9 @@ func (s *Store) runtimeView(id string, out map[string]any) (map[string]any, erro
 		steps = append(steps, item)
 	}
 	out["steps"] = steps
-	return out, rows.Err()
+	if e = rows.Err(); e != nil {
+		return nil, e
+	}
+	_ = rows.Close()
+	return s.viewSummary(id, out)
 }
