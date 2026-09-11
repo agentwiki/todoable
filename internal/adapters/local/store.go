@@ -51,6 +51,10 @@ func Open(dir string) (*Store, error) {
 		return nil, e
 	}
 	s := &Store{db: db, dir: filepath.Dir(path)}
+	if e = s.initSchedules(); e != nil {
+		_ = db.Close()
+		return nil, e
+	}
 	if e = s.initRuntime(); e != nil {
 		_ = db.Close()
 		return nil, e
@@ -99,6 +103,15 @@ func (s *Store) Submit(in domain.SubmissionInput) (domain.Result, error) {
 		return out, e
 	}
 	defer func() { _ = tx.Rollback() }()
+	out, e = submitTx(tx, in)
+	if e != nil {
+		return out, e
+	}
+	return out, tx.Commit()
+}
+func submitTx(tx *sql.Tx, in domain.SubmissionInput) (domain.Result, error) {
+	out := domain.Result{ProtocolVersion: 1}
+	var e error
 	var definition string
 	var version int
 	e = tx.QueryRow("SELECT version,definition FROM tasks WHERE id=?", in.TaskID).Scan(&version, &definition)
@@ -118,7 +131,7 @@ func (s *Store) Submit(in domain.SubmissionInput) (domain.Result, error) {
 			return out, &domain.Fault{Code: 3, Kind: "metadata_conflict", Message: "duplicate metadata differs"}
 		}
 		out.Deduplicated = true
-		return out, tx.Commit()
+		return out, nil
 	}
 	if !errors.Is(e, sql.ErrNoRows) {
 		return out, e
@@ -172,8 +185,9 @@ func (s *Store) Submit(in domain.SubmissionInput) (domain.Result, error) {
 	if _, e = tx.Exec("INSERT INTO runs(id,submission_id,run_seq,state) VALUES(?,?,1,?)", out.RunID, out.SubmissionID, out.State); e != nil {
 		return out, e
 	}
-	return out, tx.Commit()
+	return out, nil
 }
+
 func uuid() (string, error) {
 	var b [16]byte
 	if _, e := rand.Read(b[:]); e != nil {
@@ -205,5 +219,11 @@ func (s *Store) Run(id string) (map[string]any, error) {
 		return nil, e
 	}
 	out := map[string]any{"protocol_version": 1, "task_id": task, "task_version": version, "input_key": inputKey, "input": json.RawMessage(input), "submission_id": submission, "run_id": id, "run_seq": seq, "state": state, "stage": "waiting", "calls_used": calls, "repeat": total, "repeat_remaining": remaining, "concurrency_key": concurrency, "predecessor": nil, "next_check_at": nil, "scheduled_at": nil, "last_check": nil, "time_remaining": nil, "cancel_requested": false, "blocked_reason": nil, "steps": []any{}}
+	var at string
+	if e = s.db.QueryRow("SELECT scheduled_at FROM scheduled_submissions WHERE submission_id=?", submission).Scan(&at); e == nil {
+		out["scheduled_at"] = at
+	} else if !errors.Is(e, sql.ErrNoRows) {
+		return nil, e
+	}
 	return s.runtimeView(id, out)
 }

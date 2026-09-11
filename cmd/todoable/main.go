@@ -17,6 +17,9 @@ func run(args []string) int {
 		dir = args[1]
 		args = args[2:]
 	}
+	if len(args) > 0 && args[0] == "schedule" {
+		return scheduleCommand(dir, args)
+	}
 	if len(args) == 2 && args[0] == "daemon" && args[1] == "run" {
 		return daemon(dir)
 	}
@@ -96,9 +99,26 @@ func daemon(dir string) int {
 		return local.Fail(err)
 	}
 	defer func() { _ = d.Close() }()
+	if err = usecases.PublishSchedules(store); err != nil {
+		return local.Fail(err)
+	}
 	runner := store.Executor()
 	var workers sync.WaitGroup
-	errors := make(chan error, 6)
+	errors := make(chan error, 7)
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		for d.Context().Err() == nil {
+			if e := usecases.PublishSchedules(store); e != nil {
+				errors <- e
+				d.Stop()
+				return
+			}
+			if !d.Pause() {
+				return
+			}
+		}
+	}()
 	for range 6 {
 		workers.Add(1)
 		go func() {

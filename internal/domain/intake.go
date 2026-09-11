@@ -152,6 +152,7 @@ type Start struct {
 	WaitTimeout string   `json:"wait_timeout"`
 }
 type Task struct {
+	Schedule    *Schedule         `json:"schedule,omitempty"`
 	Version     int               `json:"version"`
 	ID          string            `json:"id"`
 	Workdir     string            `json:"workdir"`

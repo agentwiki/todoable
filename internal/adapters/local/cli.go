@@ -2,6 +2,7 @@ package local
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/agentwiki/todoable/internal/domain"
 	"io"
 	"os"
@@ -38,4 +39,9 @@ func Fail(err error) int {
 	code, value := ErrorResult(err)
 	_ = json.NewEncoder(os.Stderr).Encode(value)
 	return code
+}
+
+func WriteSchedule(value map[string]any) error {
+	_, e := fmt.Fprintf(os.Stdout, "Task: %v (version %v)\nEnabled: %v\nAnchor: %v\nObserved: %v\nLatest unaccepted: %v\nLast accepted: %v\nSkipped: %v\nDiscarded: %v (%v)\nLast error: %v\n", value["task_id"], value["task_version"], value["enabled"], value["anchor"], value["observed_at"], value["latest_unaccepted_at"], value["last_accepted_at"], value["skipped"], value["discarded"], value["discard_reason"], value["last_error"])
+	return e
 }
