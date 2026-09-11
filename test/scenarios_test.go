@@ -143,10 +143,12 @@ func TestScenario_SC_07(t *testing.T) {
 		if _, e := db.Exec("UPDATE runs SET calls_used=1"); e != nil {
 			t.Fatal(e)
 		}
-		sameSubmission(t, first, f.call(t, "run", "submit", f.input))
-		var remaining, calls int
-		if e := db.QueryRow("SELECT b.remaining,r.calls_used FROM repeat_budgets b JOIN runs r ON r.submission_id=b.submission_id").Scan(&remaining, &calls); e != nil || remaining != 1 || calls != 1 {
-			t.Fatalf("spent budget reset: %d %d %v", remaining, calls, e)
+		for _, retransmission := range []string{raw, strings.Replace(raw, `"task_id"`, `"task_version":1,"task_id"`, 1)} {
+			sameSubmission(t, first, f.submitRaw(t, retransmission))
+			var remaining, calls int
+			if e := db.QueryRow("SELECT b.remaining,r.calls_used FROM repeat_budgets b JOIN runs r ON r.submission_id=b.submission_id").Scan(&remaining, &calls); e != nil || remaining != 1 || calls != 1 {
+				t.Fatalf("spent budget reset after %s: %d %d %v", retransmission, remaining, calls, e)
+			}
 		}
 
 	})
