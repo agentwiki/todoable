@@ -59,6 +59,14 @@ func scenarioPastInput(t *testing.T, conflict bool) {
 	if e != nil || submissions != 2 || runs != 2 || budgets != 2 || calls != 3 {
 		t.Fatalf("history counts %d %d %d calls=%d: %v", submissions, runs, budgets, calls, e)
 	}
+	wantFiles := map[string]string{}
+	for index, run := range []map[string]any{a, b} {
+		dir := filepath.Join(f.dir, "runs", run["run_id"].(string))
+		wantFiles[filepath.Join(dir, "artifact")] = fmt.Sprintf("effect-%d", index+1)
+		wantFiles[filepath.Join(dir, "count")] = fmt.Sprint(index + 1)
+		wantFiles[filepath.Join(dir, "published")] = "published"
+	}
+	assertRunFiles(t, f, wantFiles)
 	if got := f.call(t, "run", "show", a["run_id"].(string), "--json"); !reflect.DeepEqual(got, av) {
 		t.Fatalf("past A result mutated: %v", got)
 	}
@@ -249,6 +257,13 @@ func scenarioVersionRace(t *testing.T) {
 			t.Fatalf("external stage distribution: %v", stages)
 		}
 	}
+	wantFiles := map[string]string{}
+	for _, r := range rounds {
+		dir := filepath.Join(f.dir, "runs", r.id)
+		wantFiles[filepath.Join(dir, "artifact")] = fmt.Sprintf("effect-%d", expectedCalls)
+		wantFiles[filepath.Join(dir, "count")] = fmt.Sprint(expectedCalls)
+	}
+	assertRunFiles(t, f, wantFiles)
 	var total, remaining int
 	if e = db.QueryRow(`SELECT total,remaining FROM repeat_budgets WHERE submission_id=?`, submitted["submission_id"]).Scan(&total, &remaining); e != nil || total != selected-1 || remaining != 0 {
 		t.Fatalf("repeat budget total=%d remaining=%d: %v", total, remaining, e)

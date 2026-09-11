@@ -153,6 +153,7 @@ func inputOrder(t *testing.T, fail bool) {
 	bruns := completedRuns(t, f, b, 3)
 	cruns := completedRuns(t, f, c, 3)
 	assertOrder(t, f, []string{"A1", "A2", "A3", "B1", "B2", "B3", "C1", "C2", "C3"})
+	expectedRuns := []expectedOrderRun{}
 	for i, list := range [][]map[string]any{aruns, bruns, cruns} {
 		for j, run := range list {
 			want := "succeeded"
@@ -162,12 +163,14 @@ func inputOrder(t *testing.T, fail bool) {
 			if run["stage"] != want || run["calls_used"] != float64(1) || run["run_seq"] != float64(j+1) {
 				t.Fatalf("run %d/%d %v", i, j, run)
 			}
+			expectedRuns = append(expectedRuns, expectedOrderRun{run["run_id"].(string), []string{"A", "B", "C"}[i], j + 1, append(runtimeStages(1), "after")})
 			input := run["input"].(map[string]any)
 			if input["label"] != []string{"A", "B", "C"}[i] {
 				t.Fatalf("input lost %v", input)
 			}
 		}
 	}
+	assertOrderExecutions(t, f, expectedRuns)
 	db := f.database(t)
 	var submissions, remaining int
 	if e := db.QueryRow("SELECT count(*) FROM submissions").Scan(&submissions); e != nil || submissions != 3 {
@@ -225,6 +228,7 @@ func blockedPredecessor(t *testing.T) {
 	if d["deduplicated"] != false {
 		t.Fatal("unrelated observer not admitted")
 	}
+	assertRunFiles(t, f, map[string]string{})
 }
 func afterRepeat(t *testing.T, checkSummary bool) {
 	t.Helper()
@@ -258,6 +262,7 @@ func afterRepeat(t *testing.T, checkSummary bool) {
 			t.Fatalf("after failure retried same run %v", stages)
 		}
 	}
+	assertOrderExecutions(t, f, []expectedOrderRun{{runs[0]["run_id"].(string), "A", 1, append(runtimeStages(1), "after")}, {runs[1]["run_id"].(string), "A", 2, append(runtimeStages(1), "after")}})
 	if checkSummary {
 		for _, r := range runs {
 			want := map[string]any{"succeeded": float64(1), "failed": float64(1), "skipped": float64(0), "last_result": "succeeded"}
@@ -291,7 +296,9 @@ count=int(open(countpath).read()) if os.path.exists(countpath) else 0
 if s=='finish_check':sys.exit(0 if count>=1 else 1)
 if s=='agent':
  open(countpath,'w').write(str(count+1));open(os.path.join(rd,'artifact'),'w').write(label+'-'+str(seq));sys.exit(0)
-if s=='after':sys.exit(7 if seq==inp.get('fail_after_run') else 0)
+if s=='after':
+ open(os.path.join(rd,'published'),'a').write(label+'-'+str(seq)+'\n')
+ sys.exit(7 if seq==inp.get('fail_after_run') else 0)
 `
 
 type fairFixture struct {
@@ -362,6 +369,7 @@ func fairFirst(t *testing.T, p *fairFixture) {
 	if e := p.f.database(t).QueryRow("SELECT slot_held FROM run_schedule WHERE run_id=?", p.a["run_id"]).Scan(&held); e != nil || held != 0 {
 		t.Fatalf("finished A retained slot %d %v", held, e)
 	}
+	assertOrderExecutions(t, p.f, []expectedOrderRun{{p.a["run_id"].(string), "A", 1, []string{"before", "finish_check", "agent", "finish_check", "after"}}})
 }
 func fairSecond(t *testing.T, p *fairFixture) {
 	t.Helper()
@@ -383,6 +391,9 @@ func fairSecond(t *testing.T, p *fairFixture) {
 	completedRuns(t, p.f, p.b, 1)
 	completedRuns(t, p.f, c, 1)
 	assertOrder(t, p.f, []string{"A1", "B1", "A2", "C1"})
+	expectedStages := []string{"before", "finish_check", "agent", "finish_check", "after"}
+	assertOrderExecutions(t, p.f, []expectedOrderRun{{p.a["run_id"].(string), "A", 1, expectedStages}, {p.a2, "A", 2, expectedStages}, {p.b["run_id"].(string), "B", 1, expectedStages}, {c["run_id"].(string), "C", 1, expectedStages}})
+
 	var n int
 	if e := p.f.database(t).QueryRow("SELECT count(*) FROM resources").Scan(&n); e != nil || n != 0 {
 		t.Fatalf("completed runs retain resource %d %v", n, e)
@@ -398,6 +409,7 @@ func startWaiting(t *testing.T, delayed bool) {
 	}
 	f := orderFixture(t, 1, delay, wait)
 	var predecessor map[string]any
+	expectedRuns := []expectedOrderRun{}
 	gate := filepath.Join(f.root, "predecessor-release")
 	if delayed {
 		predecessor = submitOrder(t, f, map[string]any{"label": "P", "before_gate": gate}, "finite")
@@ -420,7 +432,11 @@ func startWaiting(t *testing.T, delayed bool) {
 			t.Fatalf("start deadline began behind predecessor %d %v", first, e)
 		}
 		writeTest(t, gate, nil, 0600)
-		completedRuns(t, f, predecessor, 2)
+		previous := completedRuns(t, f, predecessor, 2)
+		for index, run := range previous {
+			expectedRuns = append(expectedRuns, expectedOrderRun{run["run_id"].(string), "P", index + 1, append(runtimeStages(1), "after")})
+		}
+
 	}
 	waitExternal(t, f, "F", "start_check", 1)
 	db := f.database(t)
@@ -477,9 +493,63 @@ func startWaiting(t *testing.T, delayed bool) {
 			t.Fatalf("second start did not receive full waiting window: %d %d %v", secondDeadline, started, e)
 		}
 	}
+	assertOrderExecutions(t, f, expectedRuns)
 	for _, event := range orderEvents(t, f) {
 		if (event.Label == "F" || event.Label == "I") && event.Stage != "start_check" {
 			t.Fatalf("false condition ran changing stage %v", event)
 		}
 	}
+}
+
+// assertRunFiles observes every fixture output, including outputs under unexpected Run directories.
+func assertRunFiles(t *testing.T, f runtimeFixture, want map[string]string) {
+	t.Helper()
+	actual := map[string]string{}
+	for _, name := range []string{"artifact", "count", "published"} {
+		paths, e := filepath.Glob(filepath.Join(f.dir, "runs", "*", name))
+		if e != nil {
+			t.Fatal(e)
+		}
+		for _, path := range paths {
+			b, e := os.ReadFile(path)
+			if e != nil {
+				t.Fatal(e)
+			}
+			actual[path] = string(b)
+		}
+	}
+	if !reflect.DeepEqual(actual, want) {
+		t.Fatalf("run output files differ: got %v want %v", actual, want)
+	}
+}
+
+type expectedOrderRun struct {
+	id, label string
+	seq       int
+	stages    []string
+}
+
+func assertOrderExecutions(t *testing.T, f runtimeFixture, runs []expectedOrderRun) {
+	t.Helper()
+	events := orderEvents(t, f)
+	wantFiles := map[string]string{}
+	for _, run := range runs {
+		stages := []string{}
+		for _, event := range events {
+			if event.RunID == run.id {
+				if event.Label != run.label || event.Seq != run.seq {
+					t.Fatalf("external Run identity changed %v", event)
+				}
+				stages = append(stages, event.Stage)
+			}
+		}
+		if !reflect.DeepEqual(stages, run.stages) {
+			t.Fatalf("external stages for %s%d: %v want %v", run.label, run.seq, stages, run.stages)
+		}
+		dir := filepath.Join(f.dir, "runs", run.id)
+		wantFiles[filepath.Join(dir, "artifact")] = fmt.Sprintf("%s-%d", run.label, run.seq)
+		wantFiles[filepath.Join(dir, "count")] = "1"
+		wantFiles[filepath.Join(dir, "published")] = fmt.Sprintf("%s-%d\n", run.label, run.seq)
+	}
+	assertRunFiles(t, f, wantFiles)
 }
