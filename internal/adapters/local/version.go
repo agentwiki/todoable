@@ -37,6 +37,9 @@ func (s *Store) Update(task domain.Task, expected int) (int, error) {
 	if previous == string(definition) {
 		return current, tx.Commit()
 	}
+	if e = updateSchedule(tx, task, current); e != nil {
+		return 0, e
+	}
 	current++
 	if _, e = tx.Exec("INSERT INTO task_versions VALUES(?,?,?)", task.ID, current, string(definition)); e != nil {
 		return 0, e
@@ -66,6 +69,22 @@ func (s *Store) SetEnabled(id string, enabled bool) error {
 	}
 	if e != nil {
 		return e
+	}
+	if !enabled {
+		now, err := scheduleNow()
+		if err != nil {
+			return err
+		}
+		task, _, st, err := loadSchedule(tx, id)
+		if err != nil {
+			return err
+		}
+		if err = closeSchedule(tx, id, task, &st, now, "task_disabled"); err != nil {
+			return err
+		}
+		if err = saveSchedule(tx, id, st); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

@@ -118,6 +118,14 @@ func ParseTask(raw []byte) (domain.Task, error) {
 			return task, domain.Invalid("invalid inherited environment name")
 		}
 	}
+	if task.Schedule != nil {
+		if task.Schedule.Cron != "" && task.Schedule.Timezone == "" {
+			task.Schedule.Timezone = "UTC"
+		}
+		if _, e := compileSchedule(*task.Schedule, time.Now()); e != nil {
+			return task, e
+		}
+	}
 	return task, nil
 }
 func envName(k string) bool {

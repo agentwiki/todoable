@@ -249,50 +249,6 @@ func TestScenario_SC_15(t *testing.T) {
 	verify(t, "V-02", func(t *testing.T) { startWaiting(t, true) })
 }
 
-// TestScenario_SC_16: 긴 정기 작업 중 여러 시각 도래
-func TestScenario_SC_16(t *testing.T) {
-	todo(t, "SC-16")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-16")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-16")
-	})
-}
-
-// TestScenario_SC_17: 일정 커밋·재시작 경계에서 중단
-func TestScenario_SC_17(t *testing.T) {
-	todo(t, "SC-17")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-17")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-17")
-	})
-}
-
-// TestScenario_SC_18: 빠진 보고 기간 수동 접수
-func TestScenario_SC_18(t *testing.T) {
-	todo(t, "SC-18")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-18")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-18")
-	})
-}
-
-// TestScenario_SC_19: DST 시각 전환과 시계 후퇴
-func TestScenario_SC_19(t *testing.T) {
-	todo(t, "SC-19")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-19")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-19")
-	})
-}
-
 // TestScenario_SC_20: 슬롯 예약·명령 결과 기록 사이 강제 종료
 func TestScenario_SC_20(t *testing.T) {
 	todo(t, "SC-20")
@@ -483,28 +439,6 @@ func TestScenario_SC_35(t *testing.T) {
 	})
 	verify(t, "V-02", func(t *testing.T) {
 		todo(t, "SC-35")
-	})
-}
-
-// TestScenario_SC_36: 일정 표현·활성화·버전 이력
-func TestScenario_SC_36(t *testing.T) {
-	todo(t, "SC-36")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-36")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-36")
-	})
-}
-
-// TestScenario_SC_37: 일정 포화·오류와 수동 기간 경계
-func TestScenario_SC_37(t *testing.T) {
-	todo(t, "SC-37")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-37")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-37")
 	})
 }
 
