@@ -4,12 +4,39 @@ import "testing"
 
 // TestScenario_SC_01: 동일 입력을 동시에 여러 번 접수
 func TestScenario_SC_01(t *testing.T) {
-	todo(t, "SC-01")
+	f := newIntake(t)
+	var first map[string]any
 	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-01")
+		results := concurrentIntake(t, f)
+		fresh := 0
+		for _, result := range results {
+			if result == nil {
+				t.Fatal("missing CLI result")
+			}
+			if first == nil {
+				first = result
+			}
+			if result["submission_id"] != first["submission_id"] || result["run_id"] != first["run_id"] || result["state"] != "waiting" || result["task_version"] != float64(1) {
+				t.Fatalf("responses differ: %v / %v", first, result)
+			}
+			if result["deduplicated"] == false {
+				fresh++
+			}
+		}
+		if fresh != 1 {
+			t.Fatalf("new submissions: %d", fresh)
+		}
+		f.stored(t, first)
 	})
 	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-01")
+		if first == nil {
+			t.Fatal("initial submission failed")
+		}
+		result := f.call(t, "run", "submit", f.input)
+		if result["submission_id"] != first["submission_id"] || result["run_id"] != first["run_id"] || result["deduplicated"] != true {
+			t.Fatalf("retransmission: %v / %v", first, result)
+		}
+		f.stored(t, first)
 	})
 }
 
