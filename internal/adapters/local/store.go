@@ -37,6 +37,9 @@ func Open(dir string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	_, e = db.Exec(`CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY, version INTEGER NOT NULL, definition TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS task_versions(task_id TEXT NOT NULL REFERENCES tasks(id),version INTEGER NOT NULL,definition TEXT NOT NULL,PRIMARY KEY(task_id,version));
+ INSERT OR IGNORE INTO task_versions SELECT id,version,definition FROM tasks;
+ CREATE TABLE IF NOT EXISTS disabled_tasks(task_id TEXT PRIMARY KEY REFERENCES tasks(id));
  CREATE TABLE IF NOT EXISTS submissions(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,task_id TEXT NOT NULL REFERENCES tasks(id),task_version INTEGER NOT NULL,input_key TEXT NOT NULL,input TEXT NOT NULL,hash TEXT NOT NULL UNIQUE,concurrency_key TEXT NOT NULL,snapshot TEXT NOT NULL,state TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS repeat_budgets(submission_id TEXT PRIMARY KEY REFERENCES submissions(id),total INTEGER NOT NULL,remaining INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY,submission_id TEXT NOT NULL REFERENCES submissions(id),run_seq INTEGER NOT NULL,state TEXT NOT NULL,calls_used INTEGER NOT NULL DEFAULT 0,UNIQUE(submission_id,run_seq));`)
@@ -76,6 +79,9 @@ func (s *Store) Register(task domain.Task) (int, error) {
 	if _, e = tx.Exec("INSERT INTO tasks VALUES(?,1,?)", task.ID, string(definition)); e != nil {
 		return 0, e
 	}
+	if _, e = tx.Exec("INSERT INTO task_versions VALUES(?,1,?)", task.ID, string(definition)); e != nil {
+		return 0, e
+	}
 	return 1, tx.Commit()
 }
 func (s *Store) Submit(in domain.SubmissionInput) (domain.Result, error) {
@@ -109,8 +115,20 @@ func (s *Store) Submit(in domain.SubmissionInput) (domain.Result, error) {
 	if !errors.Is(e, sql.ErrNoRows) {
 		return out, e
 	}
-	if in.TaskVersion != nil && *in.TaskVersion != version {
-		return out, &domain.Fault{Code: 4, Kind: "not_found", Message: "Task version not found"}
+	var disabled int
+	if e = tx.QueryRow("SELECT count(*) FROM disabled_tasks WHERE task_id=?", in.TaskID).Scan(&disabled); e != nil {
+		return out, e
+	}
+	if disabled != 0 {
+		return out, &domain.Fault{Code: 6, Kind: "task_disabled", Message: "Task is disabled"}
+	}
+	if in.TaskVersion != nil {
+		version = *in.TaskVersion
+		if e = tx.QueryRow("SELECT definition FROM task_versions WHERE task_id=? AND version=?", in.TaskID, version).Scan(&definition); errors.Is(e, sql.ErrNoRows) {
+			return out, &domain.Fault{Code: 4, Kind: "not_found", Message: "Task version not found"}
+		} else if e != nil {
+			return out, e
+		}
 	}
 	var pending, keyPending int
 	if e = tx.QueryRow("SELECT count(*),coalesce(sum(CASE WHEN task_id=? AND input_key=? THEN 1 ELSE 0 END),0) FROM submissions WHERE state='active'", in.TaskID, in.InputKey).Scan(&pending, &keyPending); e != nil {

@@ -6,6 +6,7 @@ import (
 	"github.com/agentwiki/todoable/internal/domain"
 	"github.com/agentwiki/todoable/internal/usecases"
 	"os"
+	"strconv"
 )
 
 func main() { os.Exit(run(os.Args[1:])) }
@@ -19,11 +20,22 @@ func run(args []string) int {
 		return local.Fail(domain.Invalid("supported: task register FILE, run submit FILE, run show ID --json"))
 	}
 	command := args[0] + " " + args[1]
-	if command != "task register" && command != "run submit" && command != "run show" {
+	if command != "task register" && command != "run submit" && command != "run show" && command != "task update" && command != "task enable" && command != "task disable" {
 		return local.Fail(&domain.Fault{Code: 6, Kind: "not_implemented", Message: "command is not implemented"})
 	}
-	if (command != "run show" && len(args) != 3) || (command == "run show" && (len(args) != 4 || args[3] != "--json")) {
+	if (command != "run show" && command != "task update" && len(args) != 3) || (command == "run show" && (len(args) != 4 || args[3] != "--json")) {
 		return local.Fail(domain.Invalid("invalid command arguments; run show currently requires --json"))
+	}
+	expected := 0
+	if command == "task update" {
+		if len(args) != 5 || args[3] != "--if-version" {
+			return local.Fail(domain.Invalid("task update requires --if-version N"))
+		}
+		var e error
+		expected, e = strconv.Atoi(args[4])
+		if e != nil || expected < 1 {
+			return local.Fail(domain.Invalid("invalid expected version"))
+		}
 	}
 	store, err := local.Open(dir)
 	if err != nil {
@@ -32,7 +44,10 @@ func run(args []string) int {
 	defer func() { _ = store.Close() }()
 	var value any
 	switch command {
-	case "task register":
+	case "task enable", "task disable":
+		err = usecases.SetEnabled(store, args[2], command == "task enable")
+		value = map[string]any{"protocol_version": 1, "task_id": args[2], "enabled": command == "task enable"}
+	case "task register", "task update":
 		var raw []byte
 		raw, err = local.ReadFile(args[2])
 		if err == nil {
@@ -40,7 +55,11 @@ func run(args []string) int {
 			task, err = local.ParseTask(raw)
 			if err == nil {
 				var version int
-				version, err = usecases.Register(store, task)
+				if command == "task update" {
+					version, err = usecases.Update(store, task, expected)
+				} else {
+					version, err = usecases.Register(store, task)
+				}
 				value = map[string]any{"protocol_version": 1, "task_id": task.ID, "task_version": version}
 			}
 		}

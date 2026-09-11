@@ -13,3 +13,10 @@ func Submit(store ports.IntakeStore, raw []byte) (domain.Result, error) {
 	}
 	return store.Submit(in)
 }
+
+func Update(store ports.IntakeStore, task domain.Task, expected int) (int, error) {
+	return store.Update(task, expected)
+}
+func SetEnabled(store ports.IntakeStore, id string, enabled bool) error {
+	return store.SetEnabled(id, enabled)
+}

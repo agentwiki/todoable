@@ -63,6 +63,7 @@ func (f intakeFixture) call(t *testing.T, args ...string) map[string]any {
 	t.Helper()
 	cmd := exec.Command(f.bin, append([]string{"--data-dir", f.dir}, args...)...)
 	var out, stderr bytes.Buffer
+	cmd.Env = append(os.Environ(), "GORACE=atexit_sleep_ms=0")
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 	if e := cmd.Run(); e != nil {

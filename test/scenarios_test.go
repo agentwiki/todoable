@@ -1,6 +1,10 @@
 package test
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 // TestScenario_SC_01: 동일 입력을 동시에 여러 번 접수
 func TestScenario_SC_01(t *testing.T) {
@@ -42,23 +46,45 @@ func TestScenario_SC_01(t *testing.T) {
 
 // TestScenario_SC_02: 접수 커밋 뒤 응답 전에 강제 종료
 func TestScenario_SC_02(t *testing.T) {
-	todo(t, "SC-02")
+	f := newIntake(t)
+	var original map[string]any
 	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-02")
+		original = crashAfterCommit(t, f)
+		sameSubmission(t, original, f.call(t, "run", "submit", f.input))
+		f.stored(t, original)
 	})
 	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-02")
+		sameSubmission(t, original, f.call(t, "run", "submit", f.input))
+		f.stored(t, original)
 	})
 }
 
 // TestScenario_SC_03: 큐 포화·Task 비활성 중 중복 재전송
 func TestScenario_SC_03(t *testing.T) {
-	todo(t, "SC-03")
+	f := newIntake(t)
+	first := f.call(t, "run", "submit", f.input)
+	original := inputJSON(`{"b":[true,"1"],"a":1}`)
 	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-03")
+		for i := 0; i < 99; i++ {
+			f.submitRaw(t, inputJSON(fmt.Sprintf(`{"generation":%d}`, i)))
+		}
+		sameSubmission(t, first, f.submitRaw(t, original))
+		f.call(t, "task", "disable", "concurrent")
+		sameSubmission(t, first, f.submitRaw(t, original))
+		f.counts(t, 100)
 	})
 	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-03")
+		writeTest(t, f.input, []byte(inputJSON(`{"new":true}`)), 0600)
+		f.rejected(t, 6, "task_disabled", "run", "submit", f.input)
+		f.call(t, "task", "enable", "concurrent")
+		f.rejected(t, 5, "queue_full", "run", "submit", f.input)
+		f.counts(t, 100)
+		var total, remaining, calls int
+		var input string
+		e := f.database(t).QueryRow("SELECT b.total,b.remaining,r.calls_used,s.input FROM submissions s JOIN repeat_budgets b ON b.submission_id=s.id JOIN runs r ON r.submission_id=s.id WHERE s.id=?", first["submission_id"]).Scan(&total, &remaining, &calls, &input)
+		if e != nil || total != 2 || remaining != 2 || calls != 0 || input != `{"a":1,"b":[true,"1"]}` {
+			t.Fatalf("original altered: %d %d %d %s %v", total, remaining, calls, input, e)
+		}
 	})
 }
 
@@ -97,12 +123,32 @@ func TestScenario_SC_06(t *testing.T) {
 
 // TestScenario_SC_07: Task 갱신 뒤 버전 생략 재전송
 func TestScenario_SC_07(t *testing.T) {
-	todo(t, "SC-07")
+	f := newIntake(t)
+	first := f.call(t, "run", "submit", f.input)
 	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-07")
+		updateTask(t, f)
+		sameSubmission(t, first, f.call(t, "run", "submit", f.input))
+		f.stored(t, first)
 	})
 	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-07")
+		raw := inputJSON(`{"a":1,"b":[true,"1"]}`)
+		writeTest(t, f.input, []byte(strings.Replace(raw, `"task_id"`, `"task_version":2,"task_id"`, 1)), 0600)
+		f.rejected(t, 3, "metadata_conflict", "run", "submit", f.input)
+		sameSubmission(t, first, f.submitRaw(t, strings.Replace(raw, `"task_id"`, `"task_version":1,"task_id"`, 1)))
+		f.stored(t, first)
+		db := f.database(t)
+		if _, e := db.Exec("UPDATE repeat_budgets SET remaining=1"); e != nil {
+			t.Fatal(e)
+		}
+		if _, e := db.Exec("UPDATE runs SET calls_used=1"); e != nil {
+			t.Fatal(e)
+		}
+		sameSubmission(t, first, f.call(t, "run", "submit", f.input))
+		var remaining, calls int
+		if e := db.QueryRow("SELECT b.remaining,r.calls_used FROM repeat_budgets b JOIN runs r ON r.submission_id=b.submission_id").Scan(&remaining, &calls); e != nil || remaining != 1 || calls != 1 {
+			t.Fatalf("spent budget reset: %d %d %v", remaining, calls, e)
+		}
+
 	})
 }
 
@@ -372,12 +418,39 @@ func TestScenario_SC_31(t *testing.T) {
 
 // TestScenario_SC_32: JSON 정규화와 중복 메타데이터
 func TestScenario_SC_32(t *testing.T) {
-	todo(t, "SC-32")
+	f := newIntake(t)
+	first := f.call(t, "run", "submit", f.input)
 	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-32")
+		sameSubmission(t, first, f.submitRaw(t, inputJSON(`{ "a":1.0, "b": [true,"1"] }`)))
+		for _, input := range []string{`{"a":1,"b":["1",true]}`, `{"a":"1","b":[true,"1"]}`, `{"a":1,"b":[true,"1"],"generation":2}`} {
+			got := f.submitRaw(t, inputJSON(input))
+			if got["deduplicated"] != false || got["submission_id"] == first["submission_id"] {
+				t.Fatalf("new input merged: %v", got)
+			}
+		}
+		raw := inputJSON(`{"a":1,"b":[true,"1"]}`)
+		for _, bad := range []string{strings.Replace(raw, "resource", "other", 1), strings.Replace(raw, `"task_id"`, `"task_version":2,"task_id"`, 1)} {
+			writeTest(t, f.input, []byte(bad), 0600)
+			f.rejected(t, 3, "metadata_conflict", "run", "submit", f.input)
+		}
+		db := f.database(t)
+		if _, e := db.Exec("UPDATE submissions SET hash=? WHERE id=?", hashForCollision(), first["submission_id"]); e != nil {
+			t.Fatal(e)
+		}
+		writeTest(t, f.input, []byte(inputJSON(`{"collision":true}`)), 0600)
+		f.rejected(t, 3, "hash_collision", "run", "submit", f.input)
+		f.counts(t, 4)
 	})
 	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-32")
+		before := f.durableAdmission(t)
+		for _, bad := range []string{inputJSON("{\"x\":\"" + string([]byte{255}) + "\"}"), inputJSON(`{"x":"\ud800"}`), inputJSON(`{"x":1,"x":2}`), inputJSON(`{"x":1e400}`), inputJSON(`{"x":9007199254740992}`), strings.Replace(inputJSON(`{}`), "item", " item", 1), strings.Replace(inputJSON(`{}`), "resource", "", 1)} {
+			writeTest(t, f.input, []byte(bad), 0600)
+			f.rejected(t, 2, "validation_error", "run", "submit", f.input)
+		}
+		f.counts(t, 4)
+		if after := f.durableAdmission(t); after != before {
+			t.Fatal("rejected request mutated durable admission")
+		}
 	})
 }
 
