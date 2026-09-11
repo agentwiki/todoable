@@ -17,7 +17,7 @@ func run(args []string) int {
 		dir = args[1]
 		args = args[2:]
 	}
-	if len(args) == 2 && args[0] == "daemon" && args[1] == "run" {
+	if len(args) == 1 && args[0] == "daemon" || len(args) == 2 && args[0] == "daemon" && args[1] == "run" {
 		return daemon(dir)
 	}
 	if len(args) < 3 {

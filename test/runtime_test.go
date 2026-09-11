@@ -62,7 +62,7 @@ func (f runtimeFixture) submit(t *testing.T, input map[string]any) map[string]an
 }
 func (f runtimeFixture) daemon(t *testing.T) {
 	t.Helper()
-	cmd := exec.Command(f.bin, "--data-dir", f.dir, "daemon", "run")
+	cmd := exec.Command(f.bin, "--data-dir", f.dir, "daemon")
 	cmd.Env = append(os.Environ(), "GORACE=atexit_sleep_ms=0", "CAPTURE=daemon-wrong", "OVERRIDE=daemon-wrong")
 	log := filepath.Join(f.root, "daemon.stderr")
 	stderr, e := os.Create(log)

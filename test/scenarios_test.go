@@ -144,13 +144,8 @@ func TestScenario_SC_07(t *testing.T) {
 
 // TestScenario_SC_08: 서로 다른 Task의 같은 충돌 키
 func TestScenario_SC_08(t *testing.T) {
-	todo(t, "SC-08")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-08")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-08")
-	})
+	verify(t, "V-01", func(t *testing.T) { sharedResource(t, false) })
+	verify(t, "V-02", func(t *testing.T) { sharedResource(t, true) })
 }
 
 // TestScenario_SC_09: 무관한 충돌 키 여러 개
@@ -366,13 +361,8 @@ func TestScenario_SC_25(t *testing.T) {
 
 // TestScenario_SC_26: 출력 폭주·멈춘 검사
 func TestScenario_SC_26(t *testing.T) {
-	todo(t, "SC-26")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-26")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-26")
-	})
+	verify(t, "V-01", func(t *testing.T) { outputAndTimeout(t) })
+	verify(t, "V-02", func(t *testing.T) { unknownCheckSlots(t) })
 }
 
 // TestScenario_SC_27: 완료 로그 정리

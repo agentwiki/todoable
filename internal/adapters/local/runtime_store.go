@@ -13,9 +13,13 @@ import (
 func (s *Store) initRuntime() error {
 	_, e := s.db.Exec(`CREATE TABLE IF NOT EXISTS runtime(run_id TEXT PRIMARY KEY REFERENCES runs(id),stage TEXT NOT NULL,phase TEXT NOT NULL DEFAULT '',last_check TEXT,remaining_ns INTEGER NOT NULL,next_at INTEGER NOT NULL DEFAULT 0,owner_version INTEGER NOT NULL DEFAULT 0);
  CREATE TABLE IF NOT EXISTS resources(key TEXT PRIMARY KEY,run_id TEXT NOT NULL UNIQUE REFERENCES runs(id));
+ CREATE TABLE IF NOT EXISTS check_slots(step_id TEXT PRIMARY KEY REFERENCES steps(id));
  CREATE TABLE IF NOT EXISTS steps(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,run_id TEXT NOT NULL REFERENCES runs(id),stage TEXT NOT NULL,call_index INTEGER NOT NULL,owner_version INTEGER NOT NULL,result TEXT,pid INTEGER,pgid INTEGER,boot_id TEXT,process_start TEXT);
  CREATE TABLE IF NOT EXISTS ready_queue(seq INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL UNIQUE REFERENCES runs(id));
- CREATE TABLE IF NOT EXISTS run_schedule(run_id TEXT PRIMARY KEY REFERENCES runs(id),eligible_at INTEGER NOT NULL DEFAULT 0,start_started_at INTEGER NOT NULL DEFAULT 0,wait_deadline INTEGER NOT NULL DEFAULT 0,ready_seq INTEGER NOT NULL DEFAULT 0,slot_held INTEGER NOT NULL DEFAULT 0);`)
+ CREATE TABLE IF NOT EXISTS run_schedule(run_id TEXT PRIMARY KEY REFERENCES runs(id),eligible_at INTEGER NOT NULL DEFAULT 0,start_started_at INTEGER NOT NULL DEFAULT 0,wait_deadline INTEGER NOT NULL DEFAULT 0,ready_seq INTEGER NOT NULL DEFAULT 0,slot_held INTEGER NOT NULL DEFAULT 0);
+ CREATE TABLE IF NOT EXISTS runtime_migrations(name TEXT PRIMARY KEY);
+ INSERT OR IGNORE INTO check_slots(step_id) SELECT id FROM steps WHERE stage IN ('start_check','finish_check') AND (result IS NULL OR json_extract(result,'$.kind')='process_unknown') AND NOT EXISTS(SELECT 1 FROM runtime_migrations WHERE name='check_slots');
+ INSERT OR IGNORE INTO runtime_migrations(name) VALUES('check_slots');`)
 	return e
 }
 func (s *Store) Reserve() (*domain.Execution, error) {
@@ -37,7 +41,7 @@ func (s *Store) Reserve() (*domain.Execution, error) {
  AND NOT EXISTS(SELECT 1 FROM steps st WHERE st.run_id=r.id AND st.result IS NULL)
  AND NOT EXISTS(SELECT 1 FROM submissions older WHERE older.task_id=s.task_id AND older.input_key=s.input_key AND older.seq<s.seq AND older.state='active')
  AND (rt.stage!='ready' OR (NOT EXISTS(SELECT 1 FROM resources WHERE key=s.concurrency_key) AND (SELECT count(*) FROM run_schedule WHERE slot_held=1)<2))
- AND ((rt.stage NOT IN ('start_check','finish_check') AND (rt.stage!='ready' OR json_type(s.snapshot,'$.start') IS NULL)) OR (SELECT count(*) FROM steps WHERE stage IN ('start_check','finish_check') AND result IS NULL)<4)
+ AND ((rt.stage NOT IN ('start_check','finish_check') AND (rt.stage!='ready' OR (json_type(s.snapshot,'$.start') IS NULL AND json_array_length(s.snapshot,'$.before')>0))) OR (SELECT count(*) FROM check_slots)<4)
  ORDER BY CASE WHEN r.state='running' THEN 0 WHEN rt.stage='start_check' THEN 1 ELSE 2 END,coalesce(q.seq,s.seq) LIMIT 1`, now, now).Scan(&x.RunID, &x.SubmissionID, &x.TaskID, &x.TaskVersion, &x.InputKey, &input, &x.RunSeq, &x.CallIndex, &snap, &x.Stage, &x.Phase, &last, &remaining, &started, &deadline)
 	if errors.Is(e, sql.ErrNoRows) {
 		return nil, tx.Commit()
@@ -122,6 +126,11 @@ func (s *Store) Reserve() (*domain.Execution, error) {
 	if _, e = tx.Exec("INSERT INTO steps(id,run_id,stage,call_index,owner_version) SELECT ?,run_id,?,?,owner_version FROM runtime WHERE run_id=?", x.StepID, x.Stage, x.CallIndex, x.RunID); e != nil {
 		return nil, e
 	}
+	if strings.HasSuffix(x.Stage, "_check") {
+		if _, e = tx.Exec("INSERT INTO check_slots(step_id) VALUES(?)", x.StepID); e != nil {
+			return nil, e
+		}
+	}
 	return &x, tx.Commit()
 }
 func (s *Store) Started(p domain.ProcessIdentity) error {
@@ -155,6 +164,11 @@ func (s *Store) Complete(x domain.Execution, o domain.Outcome, next string) erro
 	}
 	if n != 1 {
 		return errors.New("stale Step completion")
+	}
+	if o.Kind != "process_unknown" {
+		if _, e = tx.Exec("DELETE FROM check_slots WHERE step_id=?", x.StepID); e != nil {
+			return e
+		}
 	}
 	last := "null"
 	if x.LastCheck != nil {
