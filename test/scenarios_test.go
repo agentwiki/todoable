@@ -263,24 +263,14 @@ func TestScenario_SC_21(t *testing.T) {
 
 // TestScenario_SC_22: 옛 프로세스가 남거나 PID 확인 실패
 func TestScenario_SC_22(t *testing.T) {
-	todo(t, "SC-22")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-22")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-22")
-	})
+	verify(t, "V-01", func(t *testing.T) { orphanGroupRecovery(t); mismatchedProcesses(t, false) })
+	verify(t, "V-02", func(t *testing.T) { mismatchedProcesses(t, true) })
 }
 
 // TestScenario_SC_23: 차단 해소·재실행
 func TestScenario_SC_23(t *testing.T) {
-	todo(t, "SC-23")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-23")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-23")
-	})
+	verify(t, "V-01", func(t *testing.T) { resumeMatrix(t, false) })
+	verify(t, "V-02", func(t *testing.T) { resumeMatrix(t, true); resumeBudgetsAndArguments(t); resumeCheckCapacity(t) })
 }
 
 // TestScenario_SC_24: 취소와 완료 경합

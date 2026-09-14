@@ -1,8 +1,8 @@
 # 남은 작업
 
-SC-01~20·26·32~37의 27개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. 수동 해소·취소와 시간 예산 전체 계약은 해당 미구현 시나리오가 남아 있다.
+SC-01~20·22~23·26·32~37의 29개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소를 구현했으며 취소와 시간 예산 전체 계약은 해당 미구현 시나리오가 남아 있다.
 
-현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task enable ID`, `task disable ID`, `run submit FILE`, `run show RUN_ID --json`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 다른 명령과 schedule 외의 사람용 조회 출력은 미구현이다.
+현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task enable ID`, `task disable ID`, `run submit FILE`, `run show RUN_ID --json`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 다른 명령과 schedule 외의 사람용 조회 출력은 미구현이다.
 
 | 상태 | 작업 | 관련 시나리오 |
 | --- | --- | --- |
@@ -19,7 +19,8 @@ SC-01~20·26·32~37의 27개 시나리오 E2E를 구현했다. 접수 검증은 
 | 부분 구현 | 연속 시간 예산·복구 예산 전체 계약 | SC-38 |
 | E2E 통과 | 간격·cron·기간 보충·원자 커서 복구·활성화 이력·포화와 오류 격리 | SC-16~19, SC-36~37 |
 | E2E 통과 | 정지 미확인 Run 슬롯 포함 전역 상한·변경 의도 강제 종료 복구 | SC-09·20 |
-| 부분 구현 | PID 식별·정지 확인과 읽기 검사 복구. 수동 확인·취소 미완 | SC-21~24, SC-38~39, SC-42 |
+| E2E 통과 | 이전 그룹 정지·PID 시작값 불일치 보호, Step별 수동 해소·감사·예산 보존 | SC-22·23 |
+| 부분 구현 | 연속 시간 소비와 읽기 검사 복구. 취소·영 시간 예산 확인 결합 미완 | SC-21·24, SC-38~39, SC-42 |
 | E2E 통과 | 출력 저장 상한·파이프 소비, 검사 timeout과 정지 미확인 검사 슬롯 유지 | SC-26 |
 | 미구현 | 실행 중 설정 해시 비교·재시작 상한 적용, 저장 실패·로그 정리 | SC-25·27, SC-40 |
 | 부분 구현 | JSON 오류와 접수·Run 조회. 나머지 CLI·데몬 경계 | SC-41 |
@@ -159,6 +160,15 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 별도 통합 작업트리 `/tmp/todoable-config-recovery`에서 `scripts/verify.sh --fast` 확인 122·실패 0, 기본 `scripts/verify.sh` 확인 111·실패 0·미구현 15를 실제 확인했다. 구현 27개 시나리오의 모든 V가 통과했으며 남은 15개 `SCENARIO_TODO` 때문에 full 전체 결과는 실패다. 로그: `/tmp/config-recovery-integration-fast.log`, `/tmp/config-recovery-integration-full.log`.
 - SC-40의 설정 해시·재시작 상한 배선 진행분은 별도 stash에 보존하여 이번 통합에 포함하지 않았다. 수동 해소·취소·전체 시간 예산, 저장 실패·완료 로그 정리, 남은 CLI·백업과 L3 실제 업무 검증도 해당 시나리오 TODO로 유지한다. 이번 통합은 새 외부 환경 작업을 실행하거나 L3를 로컬 테스트로 대체하지 않았다.
 
+## 수동 해소·프로세스 식별·연속 시간 토대 (2026-09-14)
+
+- 복구 첫 묶음의 no-PID 슬롯 검증 보강은 독립 2차 리뷰를 통과했다. 리뷰어와 오케스트레이터 모두 전체 race에서 동일 슬롯 반환 변형이 SC-20 실패로 검출됨을 확인했다. 재현 로그는 `/tmp/todoable-review-recovery-round2-mutation.log`, `/tmp/recovery-reviewfix-orchestrator.log`다.
+- SC-22는 실제 리더가 먼저 종료하고 남은 그룹 자식을 데몬 재시작에서 정지하는 흐름, agent·종료검사의 기록된 시작 식별값이 다른 흐름을 확인한다. 숫자 PID의 살아 있는 프로세스를 종료하지 않고 해소를 거부하며 자원·Run 슬롯·해당 검사 슬롯과 동일 자원 대기를 유지한다.
+- SC-23은 시작검사·전처리·종료검사·agent·후처리 각각의 retry/confirm-success/confirm-failure 행렬을 실제 명령으로 실행한다. 검사는 retry만 허용하고 agent 해소는 종료검사부터 진행하며 기존 호출을 돌려주지 않는다. 원래 관측 결과는 유지하고 수동 행동·사유·지정 종료 코드와 사용자 정지 선언 여부를 별도 감사로 보존한다.
+- Run 시간은 실행 단계 진입에서 시작해 단계 사이를 포함하여 연속 소비하며, 정지 확인된 차단에서 멈춘다. 동일 Store에서는 Go 단조 시계를 사용하고 영속 ticking_at으로 중단 경과 시간을 차감한다. 남은 시간이 없는 새 예약은 failed:run_timeout으로 끝내며 재시도는 거부한다. SC-23은 정지 확인 차단 동안 예산 정지 및 재시도 후 기존 호출·시간 소모의 보존을 확인한다. 취소·영 시간 예산 수동 확인 등 SC-38 전체 E2E가 아직 남아 있으므로 SC-38은 TODO로 유지한다.
+- `scripts/verify.sh --fast` 확인 122 통과. 최종 기본 full은 확인 136·실패 0·TODO 14이며 28개 구현 시나리오의 모든 V가 통과한다. 나머지 TODO로 full 전체는 실패한다. 로그 `/tmp/manual-recovery-fast-final.log`, `/tmp/manual-recovery-full-final.log`. 이번 묶음에서 L3 실환경 검증은 실행하지 않았다.
+- agent retry가 종료검사를 건너뛰게 한 변형을 `/tmp/todoable-manual-skipcheck-d7abf9zu` 별도 복사에서 전체 `go test -race -count=1 ./...`로 실행했다. SC-23/V-01·V-02 agent-retry가 원래 agent 다음 새 Step이 종료검사여야 한다는 단정으로 실패했다(종료 1). 로그 `/tmp/manual-recovery-mutation.log`; 변형은 원 worktree에 적용하지 않았다.
+
 ## 독립 충돌 키 검증의 ready 순서 경합 수정 (2026-09-14)
 
 - 전체 검증 중 SC-09/V-02가 일시 실패했다. 그 최초 실패의 상세 원인은 보존된 testreport 출력만으로 단정하지 않는다. 별도 독립 재현에서는 free-0의 시작검사를 200ms 늦추자 free-1이 먼저 ready가 되었는데, 테스트가 free-0의 진입을 기다리면서 free-1의 gate를 열지 않아 교착하는 검증 경합을 확인했다. 제품의 ready 순서는 정상이다.
@@ -166,3 +176,20 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - `scripts/verify.sh --fast` 확인 122 통과. 기본 full은 확인 111·실패 0·TODO 15이며 현재 27개 구현 시나리오의 모든 V가 통과한다. 로그 `/tmp/sc09-order-fast.log`, `/tmp/sc09-order-full.log`; 전체 full은 남은 TODO로 실패한다.
 - free-0 시작검사에 200ms 지연만 추가한 `/tmp/todoable-sc09-delayed-5qani39g` 별도 복사에서 전체 `go test -race -count=1 ./...`가 종료 0으로 통과했다(로그 `/tmp/sc09-order-delayed.log`). 병렬 순서 교란을 허용하는지 확인한 것이며 TODO 시나리오의 제품 완료를 뜻하지 않는다.
 - 전역 Run 예약 상한을 2에서 3으로 올린 `/tmp/todoable-sc09-overcap-hrlj05o6` 변형은 같은 전체 race 실행에서 SC-09/V-01이 실제 구간 3 대 허용 2, V-02가 2 대 허용 1을 검출해 실패한다. SC-20/V-02의 no-PID 슬롯 검증도 함께 실패했다. 로그 `/tmp/sc09-order-overcap.log`, 실제 종료 1. 제품 코드는 원 worktree에서 변경하지 않았다.
+
+
+## 수동 해소 1차 독립 리뷰 보강 (2026-09-14)
+
+- 독립 리뷰에서 start가 없고 before가 있는 Task의 종료검사를 재시도하면, ready 예약이 최초 Task 구조만 보고 검사 슬롯을 소비하지 않는 단계로 판단하여 검사 4개가 점유된 상태에서도 다섯 번째를 예약하는 결함을 확인했다. 예약 트랜잭션은 resume_queue에 저장된 실제 다음 단계를 우선하여 검사 슬롯 필요 여부를 판정하도록 수정했다.
+- SC-23/V-02는 종료검사 차단 뒤 다른 Task의 시작검사 4개를 외부 gate로 점유하고 retry를 요청한다. 재검사 Step·실행 기록이 늘지 않고 슬롯 4개를 유지하는지, gate 해제 후 종료검사부터 재개하여 전처리 중복 실행 없이 성공·산출물·최종 슬롯 반환에 도달하는지 대조한다.
+- 독립 리뷰의 두 번째 변형은 retry에만 정지 증거를 요구하고 결과 확인에는 요구하지 않아도 기존 테스트가 통과하는 공백이었다. SC-22/V-02는 시작 식별값이 다른 살아 있는 agent에 retry·confirm-success·confirm-failure를 모두 거부하고 각 요청 전후 단계·소유 버전·호출/반복/시간 예산·Step 관측 결과·감사·자원·Run/검사 슬롯이 동일한지 확인한다. 정지 미확인 시간의 정상 소비와 요청 자체의 변경을 구분하기 위해 SQLite 쓰기 소유를 먼저 확보한 뒤 복구 데몬을 일시 정지한다. 재개 후 독립 작업을 완료시키며 차단 명령·산출물 미실행과 원래 프로세스 보존도 확인한다.
+- `scripts/verify.sh --fast` 확인 122 통과. 최종 full은 확인 136·실패 0·TODO 14이며 28개 구현 시나리오의 모든 V 통과를 유지한다. 로그 `/tmp/manual-reviewfix-fast.log`, `/tmp/manual-reviewfix-full.log`. SC-38의 영 시간 예산·취소 결합은 계속 미완 범위로 남긴다.
+- 수정 전 검사 슬롯 판정으로 되돌린 `/tmp/todoable-manual-reviewfix-checkcap-oaqfxcdz` 복사에서 전체 `go test -race -count=1 ./...`를 실행했다. SC-23/V-02가 종료검사 Step 2개·검사 슬롯 5개를 검출하여 종료 1로 실패한다. 로그 `/tmp/manual-reviewfix-checkcap-mutation.log`.
+- 결과 확인에서만 정지 증거를 생략하는 `/tmp/todoable-manual-reviewfix-stop-k2f_zxyd` 변형도 전체 race에서 SC-22/V-02/agent가 실패한다. 정지 미확인인데 confirm-success가 코드 0·ready 상태와 수동 감사 기록을 반환한 것을 거부 코드 6 기대와 대조해 검출했다. 로그 `/tmp/manual-reviewfix-stop-mutation.log`, 실제 종료 1. 두 변형 모두 원 worktree에는 적용하지 않았다.
+
+## 설정 파서·수동 해소 통합 (2026-09-14)
+
+- 독립 2차 리뷰가 승인한 수동 해소 `0dcfb0a`를 설정 파서와 SC-09 검증 경합 수정이 포함된 `f7cc479`에 병합했다. Store 초기화 충돌은 설치 설정과 Run 시간 계산의 단조 시계 anchor를 모두 보존하여 해결했고, 양쪽 검증 기록도 유지했다. CLI는 설치 cap 검증과 수동 resume 진입을 함께 제공한다.
+- 별도 통합 작업트리 `/tmp/todoable-manual-integration`에서 `scripts/verify.sh --fast` 확인 122·실패 0, 기본 full 확인 139·실패 0·미구현 13을 실제 확인했다. 구현 29개 시나리오의 모든 V가 통과하며 남은 13개 `SCENARIO_TODO` 때문에 full 전체 결과는 실패다. 로그 `/tmp/manual-integration-fast.log`, `/tmp/manual-integration-full.log`.
+- 수동 해소 2차 독립 리뷰와 오케스트레이터가 결과 확인의 정지 전제 우회 변형을 전체 race에서 SC-22 실패로 재현했다(`/tmp/manual-reviewfix-orchestrator.log`). 실제 다음 검사 슬롯 판정과 성공·실패 확인의 정지 전제 보강이 승인되었다. 이번 병합은 승인된 두 분기의 결합이며 새 제품 행동이나 별도 무력화 변형을 추가하지 않았다.
+- 취소 진행분은 별도 작업트리에 보존하고 이번 병합에서 제외했다. SC-21·24·38·39, 저장 실패·감사 로그 정리, SC-40 설정 변경, 나머지 CLI·복구 및 L3 실제 업무 검증은 해당 TODO를 유지한다. L3 외부 환경 검증은 이번 통합에서 실행하지 않았다.

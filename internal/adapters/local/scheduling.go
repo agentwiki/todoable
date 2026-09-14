@@ -137,5 +137,9 @@ func (s *Store) viewSummary(id string, out map[string]any) (map[string]any, erro
 	}
 	out["runs"] = runs
 	out["summary"] = map[string]any{"succeeded": success, "failed": failed, "skipped": skipped, "last_result": last}
-	return out, rows.Err()
+	if e = rows.Err(); e != nil {
+		return nil, e
+	}
+	_ = rows.Close()
+	return s.resolutionView(id, out)
 }
