@@ -1,6 +1,6 @@
 # 남은 작업
 
-SC-01~42의 42개 시나리오 E2E를 구현하여 통합했다. 통합된 main의 최종 full/deep 검증은 진행 중이며, 이 구현 개수만으로 전체 완료를 뜻하지 않는다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소, 연속 Run 시간 예산과 읽기 검사 복구를 구현했다.
+SC-01~42의 42개 시나리오 E2E를 구현했으며, 2026-09-14 Linux amd64의 최종 main `scripts/verify.sh --deep`에서 모두 실제 실행·통과했다. fast 확인 139·실패 0, 실환경 E2E 확인 219·실패 0·미구현 0·건너뜀 0이다. 기본 모드는 L3 세 개를 의도적으로 실행하지 않아 전체 종료 1이며, 아래 최종 기록에서 구분한다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소, 연속 Run 시간 예산과 읽기 검사 복구를 구현했다.
 
 현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task show ID [--version N] [--json]`, `task enable ID`, `task disable ID`, `task cancel ID --reason TEXT`, `run submit FILE`, `run show RUN_ID [--json]`, `status [--task ID] [--json]`, `logs RUN_ID [--step STEP_ID] [--follow]`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `submission cancel ID --reason TEXT [--acknowledge-effects] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 조회는 기본 사람이 읽는 형식이며 `--json`으로 JSON 객체를 받는다. 로그 조회는 원본 바이트를 출력하며 `--follow`는 이후 Step의 출력까지 따라간다.
 
@@ -27,7 +27,7 @@ SC-01~42의 42개 시나리오 E2E를 구현하여 통합했다. 통합된 main�
 | E2E 통과 | 저장 실패 admission 중단·1초 점검 복구·미저장 변경 결과 차단 | SC-25 |
 | E2E 통과 | 전체 CLI·사람/JSON 조회·로그 follow·기본경로·코드0~6·데몬 부재/오래된 관측 | SC-41 |
 | L3 E2E 통과 | 실제 PNG 병렬 WebP 변환·독립 픽셀 대조·실패 격리·재전송 보존 | SC-29 |
-| 개별 L3 E2E 통과·최종 통합 검증 대기 | 실제 Forgejo/Codex 이슈 수정·SeaweedFS S3 기간 리포트 게시와 불명 효과 해소 | SC-28·30 |
+| L3 E2E 통과 | 실제 Forgejo/Codex 이슈 수정·SeaweedFS S3 기간 리포트 게시와 불명 효과 해소 | SC-28·30 |
 
 YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이 제한과 설치 cap을 적용한다. 신규 접수는 선택한 현재·과거 Task 버전을 현 cap으로 검증하고, 기존 접수의 재전송은 같은 접수로 돌려준다. 실행 중 데몬과 CLI의 설정 해시가 다르면 조회만 허용하고 변경 명령은 재시작을 요구한다. 재시작한 데몬은 실행·검사·로그 관리의 현 상한을 사용하며 기존 접수의 스냅샷·예산은 유지한다. 일정 정의·활성화·비활성화·기간 수동 접수와 Task 전체 취소·과거 버전 조회를 구현했다. 접수 환경 스냅샷을 실제 실행에 전달하는 계약은 SC-34에서 확인했다.
 
@@ -424,3 +424,11 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 현재 42개 구현의 최종 기본 검증과 `--deep`은 main에서 오케스트레이터가 직접 실행할 예정이다. 기본 모드의 L3 실행 조건과 deep의 실제 Forgejo/Codex·ImageMagick/Pillow·SeaweedFS 요구사항을 바꾸지 않았다. 실행 전까지 42개 모두 통과했다고 주장하지 않는다.
 - 최종 관측 후 1초 경계까지 포함한 메인의 날짜 skip 제거 변형도 전체 race에서 종료 1이었다(258.358초, `/tmp/todoable-main-cron-noskip-final-full.log`). 유일 실패는 SC-36/V-01 자동 8년 리포트 조회의 database_busy이며, 강화한 sparse 행 관측 단정에 도달하기 전 실패임을 구분한다.
 - 합본 `scripts/verify.sh --fast`는 도구 자기검증·게이트·lint·빠른 등급 확인 139·실패 0으로 통과했다(`/tmp/all42-integration-fast.log`). 이는 최종 제품 full/deep을 대신하지 않는다.
+
+
+## 최종 main 검증 완료 (2026-09-14)
+
+- 오케스트레이터가 통합 제품 커밋 `bd5f205`와 보존된 사용자 시나리오 문서를 기준으로 두 검증을 직접 실행했다. `scripts/verify.sh`는 fast 확인 139·실패 0, E2E 확인 210·실패 0·미구현 0·건너뜀 3, 42개 시나리오 함수가 모두 관측됐다. SC-28·29·30의 명시적인 L3 실행 조건 때문에 전체 종료는 1이다(`/tmp/todoable-final-main-full.log`). 기본 검증 전체가 통과했다고 보고하지 않는다.
+- `scripts/verify.sh --deep`는 fast 확인 139·실패 0, 실환경 E2E 확인 219·실패 0·미구현 0·건너뜀 0, 42개 시나리오와 모든 V 검증이 실제 통과하여 종료 0이다(`/tmp/todoable-final-main-deep.log`). 실제 Forgejo/Codex 이슈 수정, ImageMagick/Pillow 변환, SeaweedFS S3 게시와 중단 복구를 포함한다. 최종 관측 후 1초 경계 단정도 이 제품 코드와 테스트에 포함되어 실행됐다.
+- 이 최종 문서 갱신은 위 결과와 현재 구현 상태만 반영한다. 작업 규칙·문서 위계·제품 계약은 유지하며 사용자 `docs/scenarios.md` 편집을 수정하거나 커밋하지 않는다. 제품·도구·테스트 코드는 검증한 `bd5f205`와 동일하다.
+- 검증 호스트는 Linux amd64다. 실제 Linux arm64 실행, 물리 장치 고장·호스트 재부팅 주입은 이번 완료 실행에 포함하지 않았다. 해당 환경 검증과 기존 장시간 fuzz·govulncheck 자동 도구 고정 정책 등 후속 항목은 이전 근거를 유지한다. 기본 L3 skip이나 초기 실패를 숨기지 않고 실제 통과한 최종 deep 결과와 구분한다.

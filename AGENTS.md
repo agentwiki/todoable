@@ -1,6 +1,6 @@
 # 에이전트 작업 규칙
 
-이 저장소는 todoable v1의 프로젝트 골격이다. 제품 기능은 미구현이며 문서의 CLI 예시를 이미 동작하는 기능으로 보고하지 않는다.
+이 저장소는 todoable v1의 CLI·데몬과 시나리오 E2E를 구현한다. 실제 검증 현황은 docs/roadmap.md에 기록하며, 문서의 CLI 예시만으로 기능 완료를 보고하지 않는다.
 
 - 문서 위계는 docs/scenarios.md > docs/architecture.md·docs/requirements.md > 코드다. 완료 판정은 해당 시나리오 E2E 실제 통과로만 내린다. 시나리오 변경이 필요하면 멈추고 사용자에게 올린다.
 - 검증 진입점은 scripts/verify.sh다. --fast는 개발·pre-commit용, 기본 실행은 E2E를 포함한 완료 판정용, --deep은 실제 외부 환경 검증용이다. 미구현 SCENARIO_TODO를 환경 부족으로 바꾸거나 숨기지 않는다.

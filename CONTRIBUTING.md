@@ -1,6 +1,6 @@
 # 개발 시작하기
 
-접수·데몬 실행·복구·취소·조회 기능과 실제 CLI E2E가 구현되어 있다. 빠른 검증은 도구와 구조·단위 테스트를 확인하고, 기본 검증은 구현된 E2E를 실행하며 남아 있는 미구현 시나리오를 실패로 보고한다. 제품 완료는 해당 사용자 시나리오 E2E가 실제로 실행되어 통과한 경우에만 판정한다.
+접수·데몬 실행·복구·취소·조회 기능과 42개 시나리오 E2E가 구현되어 있다. 빠른 검증은 도구와 구조·단위 테스트를 확인한다. 기본 검증은 L2 E2E를 실행하고 L3 세 개를 건너뛰므로 전체 판정은 실패한다. 전체 완료 판정에는 실제 환경을 준비한 `--deep` 통과가 필요하며, 최신 결과는 [검증 현황](docs/roadmap.md)에 기록한다.
 
 ## 도구 준비
 
@@ -18,7 +18,7 @@ git config core.hooksPath .githooks
 
 ## 변경하고 검증하기
 
-먼저 [사용자 시나리오](docs/scenarios.md)에서 구현할 흐름을 고르고 [요구사항](docs/requirements.md)의 세부 계약과 [아키텍처](docs/architecture.md)의 계층 경계를 읽는다. test/의 해당 미구현 테스트를 실제 CLI/데몬 E2E로 구현하고, 문서의 각 검증 줄을 같은 순서의 V 번호 단정문으로 연결한다.
+먼저 [사용자 시나리오](docs/scenarios.md)에서 구현할 흐름을 고르고 [요구사항](docs/requirements.md)의 세부 계약과 [아키텍처](docs/architecture.md)의 계층 경계를 읽는다. test/의 해당 실제 CLI/데몬 E2E를 확인하고 변경에 맞춰 보강하며, 문서의 각 검증 줄을 같은 순서의 V 번호 단정문으로 연결한다.
 
 ```sh
 scripts/verify.sh --fast
@@ -31,6 +31,8 @@ scripts/verify.sh --deep
 | --fast | 포맷·게이트 자기검증·빌드·vet·게이트·lint·빠른 테스트. 개발 중과 pre-commit에 사용 |
 | 옵션 없음 | 위 검사와 race를 포함한 E2E. 미구현·누락 실행은 실패 |
 | --deep | 공통 검사 뒤 E2E를 E2E_DEEP=1, -count=1로 한 번 실행해 실제 외부 환경까지 확인 |
+
+`--deep` 실행 전 [이슈 수정](test/testdata/issues/README.md), [자료 변환](test/testdata/conversion/README.md), [외부 게시](test/testdata/report/README.md)의 도구·인증 준비를 따른다. 기본 모드의 L3 건너뜀을 없애거나 미구현을 환경 부족으로 바꿔 통과시키지 않는다.
 
 계층 경로·테스트 패키지·빌드 태그는 archgate.json에서만 관리한다. 검증 스크립트와 훅에 별도 목록을 만들지 않는다. 현재 빠른 테스트에는 게이트 자기검증이 포함되며, 빠른 검증의 성공이 제품 기능을 검증했다는 뜻은 아니다.
 
