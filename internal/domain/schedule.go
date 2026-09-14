@@ -43,14 +43,6 @@ func CompileSchedule(s Schedule, now time.Time, location *time.Location) (Schedu
 	if err != nil || len(raw) == 0 || raw[0] != '{' {
 		return r, Invalid("schedule input must be a JSON object")
 	}
-	// Reserve the exact maximum-width occurrence envelope (RFC3339Nano, year 9999).
-	envelope, err := json.Marshal(struct {
-		Data       json.RawMessage `json:"data"`
-		Occurrence Occurrence      `json:"occurrence"`
-	}{raw, Occurrence{"9999-12-31T23:59:59.999999999Z", "9999-12-31T23:59:59.999999999Z", "9999-12-31T23:59:59.999999999Z"}})
-	if err != nil || len(envelope) > 1048576 {
-		return r, Invalid("schedule input too large")
-	}
 	if s.Every != "" {
 		r.every, err = time.ParseDuration(s.Every)
 		if err != nil || r.every < time.Second || s.Timezone != "" {

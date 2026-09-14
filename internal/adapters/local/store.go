@@ -16,17 +16,17 @@ import (
 )
 
 type Store struct {
-	db  *sql.DB
-	dir string
+	db     *sql.DB
+	dir    string
+	config Config
 }
 
 func Open(dir string) (*Store, error) {
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return nil, e
 	}
-	if _, e := os.Stat(filepath.Join(dir, "config.yaml")); e == nil {
-		return nil, &domain.Fault{Code: 6, Kind: "not_implemented", Message: "config.yaml support is not implemented"}
-	} else if !errors.Is(e, os.ErrNotExist) {
+	config, e := ReadConfig(dir)
+	if e != nil {
 		return nil, e
 	}
 	path, e := filepath.Abs(filepath.Join(dir, "todoable.db"))
@@ -50,7 +50,7 @@ func Open(dir string) (*Store, error) {
 		_ = db.Close()
 		return nil, e
 	}
-	s := &Store{db: db, dir: filepath.Dir(path)}
+	s := &Store{db: db, dir: filepath.Dir(path), config: config}
 	if e = s.initSchedules(); e != nil {
 		_ = db.Close()
 		return nil, e
@@ -103,13 +103,13 @@ func (s *Store) Submit(in domain.SubmissionInput) (domain.Result, error) {
 		return out, e
 	}
 	defer func() { _ = tx.Rollback() }()
-	out, e = submitTx(tx, in)
+	out, e = submitTx(tx, in, s.config)
 	if e != nil {
 		return out, e
 	}
 	return out, tx.Commit()
 }
-func submitTx(tx *sql.Tx, in domain.SubmissionInput) (domain.Result, error) {
+func submitTx(tx *sql.Tx, in domain.SubmissionInput, config Config) (domain.Result, error) {
 	out := domain.Result{ProtocolVersion: 1}
 	var e error
 	var definition string
@@ -155,12 +155,18 @@ func submitTx(tx *sql.Tx, in domain.SubmissionInput) (domain.Result, error) {
 	if e = tx.QueryRow("SELECT count(*),coalesce(sum(CASE WHEN task_id=? AND input_key=? THEN 1 ELSE 0 END),0) FROM submissions WHERE state='active'", in.TaskID, in.InputKey).Scan(&pending, &keyPending); e != nil {
 		return out, e
 	}
-	if pending >= 1000 || keyPending >= 100 {
+	if pending >= config.MaxPendingSubmissions || keyPending >= config.MaxPendingPerInputKey {
 		return out, &domain.Fault{Code: 5, Kind: "queue_full", Message: "pending submission limit reached"}
 	}
 	var task domain.Task
 	if e = json.Unmarshal([]byte(definition), &task); e != nil {
 		return out, e
+	}
+	if e = validateTaskCaps(task, config); e != nil {
+		return out, e
+	}
+	if len(in.Input) > config.MaxInputBytes {
+		return out, domain.Invalid("input exceeds current installation cap")
 	}
 	snap, e := snapshot(task)
 	if e != nil {
