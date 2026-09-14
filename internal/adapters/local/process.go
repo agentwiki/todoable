@@ -22,14 +22,23 @@ import (
 
 // Runner executes one committed step using its submission snapshot.
 type Runner struct {
-	Dir          string
-	Started      func(domain.ProcessIdentity) error
-	LogBytes     int64
-	Cancelled    func(string) (bool, error)
-	RunRemaining func(string) (int64, error)
+	Dir            string
+	Started        func(domain.ProcessIdentity) error
+	LogBytes       int64
+	Failed         func(domain.Execution, domain.Outcome, error)
+	SyncFile       func(*os.File) error
+	StorageFailure func(error)
+	AdmissionOpen  func() bool
+	Cancelled      func(string) (bool, error)
+	RunRemaining   func(string) (int64, error)
 }
 
 func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.Outcome, err error) {
+	defer func() {
+		if err != nil && r.Failed != nil {
+			r.Failed(step, out, err)
+		}
+	}()
 	out.Kind = "start_failed"
 	out.ExitCode = -1
 	runDir, err := filepath.Abs(filepath.Join(r.Dir, "runs", step.RunID))
@@ -56,7 +65,7 @@ func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.
 		return out, err
 	}
 	_, writeErr := f.Write(data)
-	syncErr := f.Sync()
+	syncErr := r.syncFile(f)
 	closeErr := f.Close()
 	if err = errors.Join(writeErr, syncErr, closeErr); err != nil {
 		return out, err
@@ -73,6 +82,9 @@ func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.
 		return out, err
 	}
 	defer func() { err = errors.Join(err, stderr.Close()) }()
+	if err = errors.Join(r.syncFile(stdout), r.syncFile(stderr)); err != nil {
+		return out, err
+	}
 	argv := stageCommand(step)
 	if len(argv) == 0 {
 		return out, fmt.Errorf("missing command for %s", step.Stage)
@@ -108,7 +120,7 @@ func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.
 	if capBytes <= 0 {
 		capBytes = 10485760
 	}
-	capture := &logCapture{remaining: capBytes}
+	capture := &logCapture{remaining: capBytes, onError: r.StorageFailure}
 	stdoutStream := &logStream{capture: capture, file: stdout}
 	stderrStream := &logStream{capture: capture, file: stderr}
 	stdoutRead, stdoutWrite, err := os.Pipe()
@@ -151,6 +163,9 @@ func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.
 	if ctx.Err() != nil {
 		out.Kind = "unknown"
 		return out, nil
+	}
+	if r.AdmissionOpen != nil && !r.AdmissionOpen() {
+		return out, errors.New("storage admission paused")
 	}
 	started := time.Now()
 	if startErr := command.Start(); startErr != nil {
@@ -276,7 +291,7 @@ func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.
 	out.Truncated = capture.truncated
 	err = errors.Join(err, capture.err)
 	capture.mu.Unlock()
-	err = errors.Join(err, stdout.Sync(), stderr.Sync())
+	err = errors.Join(err, r.syncFile(stdout), r.syncFile(stderr))
 	if err != nil && out.Kind == "exited" {
 		out.Kind = "unknown"
 	}
@@ -319,6 +334,7 @@ func snapshotExecutable(name string, task domain.Task) (string, error) {
 }
 
 type logCapture struct {
+	onError   func(error)
 	mu        sync.Mutex
 	remaining int64
 	truncated bool
@@ -348,6 +364,9 @@ func (s *logStream) Write(p []byte) (int, error) {
 		s.capture.remaining -= int64(written)
 		if err == nil && int64(written) != keep {
 			err = io.ErrShortWrite
+		}
+		if err != nil && s.capture.err == nil && s.capture.onError != nil {
+			s.capture.onError(err)
 		}
 		s.capture.err = errors.Join(s.capture.err, err)
 	}
@@ -412,4 +431,11 @@ func scanProcessGroup(entries []os.DirEntry, pgid int, read func(int) ([]string,
 		}
 	}
 	return false, nil
+}
+
+func (r Runner) syncFile(f *os.File) error {
+	if r.SyncFile != nil {
+		return r.SyncFile(f)
+	}
+	return f.Sync()
 }

@@ -1,6 +1,6 @@
 # 남은 작업
 
-SC-01~24·26~27·32~40의 35개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소, 연속 Run 시간 예산과 읽기 검사 복구를 구현했다.
+SC-01~27·32~40·42의 37개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소, 연속 Run 시간 예산과 읽기 검사 복구를 구현했다.
 
 현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task enable ID`, `task disable ID`, `run submit FILE`, `run show RUN_ID --json`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `submission cancel ID --reason TEXT [--acknowledge-effects] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 다른 명령과 schedule 외의 사람용 조회 출력은 미구현이다.
 
@@ -11,7 +11,7 @@ SC-01~24·26~27·32~40의 35개 시나리오 E2E를 구현했다. 접수 검증�
 | E2E 통과 | 입력 키별 전체 반복 순서·차단 선두, 과거 입력 중복, 갱신 경합의 온전한 실행 스냅샷 | SC-04·05·06 |
 | 부분 구현 | Task 활성 전환·과거 정의 보존. Task 전체 취소·조회는 미완 | SC-31 |
 | E2E 통과 | 설치 설정·Task·입력 파싱, 원본/정규화 크기·깊이·기간 상한, 과거 버전 신규 접수 현 cap 검증 | SC-33 |
-| 부분 구현 | SQLite WAL·FULL·외래키·고유 제약·즉시 트랜잭션 | SC-02~10, SC-42 |
+| E2E 통과 | 신호 종료·불명 변경 차단·관측 완료 보존, SQLite 일관 백업·복원·원자 저장 | SC-42 |
 | E2E 통과 | 최초 검사 성공, 마지막 호출 뒤 검사, 정상 비영 agent 결과, 환경·컨텍스트·argv·stdin·로그 | SC-11·12·13·34 |
 | E2E 통과 | 서로 다른 Task의 같은 충돌 자원 배타·결과 불명 소유 유지 | SC-08 |
 | E2E 통과 | 반복 자원 반환·ready 순서, after 실패 회차 이력·요약, 유한·무한 시작 대기와 반복 지연 | SC-10·14·15 |
@@ -21,11 +21,10 @@ SC-01~24·26~27·32~40의 35개 시나리오 E2E를 구현했다. 접수 검증�
 | E2E 통과 | 정지 미확인 Run 슬롯 포함 전역 상한·변경 의도 강제 종료 복구 | SC-09·20 |
 | E2E 통과 | 이전 그룹 정지·PID 시작값 불일치 보호, Step별 수동 해소·감사·예산 보존 | SC-22·23 |
 | E2E 통과 | after 게시 직후 복구·결과 확인·효과 인정 취소, 취소/완료 경합·옛 소유 통지 거부 | SC-21·24·39 |
-| 부분 구현 | 종료·저장 실패와 복구 결합 | SC-42 |
 | E2E 통과 | 출력 저장 상한·파이프 소비, 검사 timeout과 정지 미확인 검사 슬롯 유지 | SC-26 |
 | E2E 통과 | 실행 중 설정 해시 비교·재시작 실행/검사/접수/로그 상한·기존 예산 보존 | SC-40 |
 | E2E 통과 | 오래된 완료 stdout·stderr 기간/총량 정리, 진행·차단 로그와 실제 수동 감사·이력·중복 기록 보존 | SC-27 |
-| 미구현 | 저장 실패와 storage_paused 모드 | SC-25 |
+| E2E 통과 | 저장 실패 admission 중단·1초 점검 복구·미저장 변경 결과 차단 | SC-25 |
 | 부분 구현 | JSON 오류와 접수·Run 조회. 나머지 CLI·데몬 경계 | SC-41 |
 | 미구현 | 실제 이슈 수정·자료 변환·기간 리포트 | SC-28~30 |
 
@@ -296,3 +295,27 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - Executor 잔여시간 콜백을 제거한 `/tmp/todoable-time-budget-exec-mutant`의 전체 `go test -race -count=1 ./...`는 SC-38/V-01/continuity/delayed-exec에서 만료된 예약이 실제 exited로 실행됨을 검출해 종료 1이었다(229.958s, `/tmp/time-budget-exec-mutant.log`). 수동 해소의 시계 재시작을 제거한 `/tmp/todoable-time-budget-resume-mutant`도 같은 전체 race에서 resume-queue가 0이어야 할 예산을 1.9493873s로 보존한 것을 검출해 종료 1이었다(229.465s, `/tmp/time-budget-resume-mutant.log`).
 - 양수 잔여시간으로 실행 제한을 줄이는 분기만 제거한 `/tmp/todoable-time-budget-limit-mutant`의 전체 race는 delayed-limited-exec가 실제 실행 2.006977337s를 관측하여 1.3s 상한 위반으로 종료 1이었다(223.569s, `/tmp/time-budget-limit-mutant.log`). 세 변형 패치는 `/tmp/time-budget-{exec,resume,limit}-mutation.patch`에 보존했다.
 - 최종 `scripts/verify.sh`는 fast 확인 132·실패 0, full 확인 184·실패 0·미구현 7로 SC-38을 포함한 35개 구현 시나리오의 모든 V가 통과했다(`/tmp/time-budget-final-full-complete.log`). 전체 full은 남은 TODO 때문에 종료 1이다. L3 실제 외부 업무·실환경 `--deep`은 이번 로컬 시간 예산 범위에서 실행하지 않았다. 독립 리뷰와 오케스트레이터의 핵심 변형 재현은 후속이다.
+
+
+## 저장 장애와 종료 복구 검증 (2026-09-14)
+
+- SC-25는 DB 실행 의도·결과 저장을 SQLite trigger로 거부하고, 로그 디렉터리를 파일로 바꿔 생성 실패를 발생시킨다. 실제 CLI 데몬의 stderr, 조회, 입력·중복 기록과 외부 명령 기록을 대조한다. 동기화 실패는 실제 Store/Runner/usecase의 파일 동기화 포트에 EIO를 주입한다. 이 경우에도 외부 명령은 실제 프로세스이고 저장·조회는 SQLite와 CLI를 사용한다.
+- 동기화 대역이 CLI 배선 누락을 가리지 않도록 실제 Executor의 기본 동기화가 pipe에서 Linux fsync의 EINVAL을 전달하는 별도 검증을 둔다. probe 간격은 DB에 기록된 두 점검 시각으로 확인한다. 동기화 실패 E2E의 단일 worker는 실제 CLI의 여러 worker 배선 검증을 대신하지 않으며, DB·생성 실패 사례는 실제 CLI daemon을 사용한다.
+- SC-42는 SIGTERM·SIGINT로 변경 명령을 중단하고 재시작한다. 이전 성공은 보존하고 불명 변경과 자원 소유는 차단한다. SQLite `VACUUM INTO`의 일관된 사본을 별도 디렉터리에 복원해 Task·접수·Run·Step·자원·중복·수동 해소 감사 기록을 포함한 모든 테이블을 원본과 대조한다. 명령 대기 중 별도 연결의 쓰기와 접수 중간 거부의 원자적 롤백, 로그만으로 성공을 추정하지 않음도 확인한다.
+- WAL·FULL·외래키·5초 busy timeout은 동시에 보유한 두 실제 SQLite 연결에서 확인한다. 실제 디스크 고갈·장치 고장 또는 호스트 재부팅을 주입하는 L3 검증은 이번 범위에 포함하지 않았다.
+- `scripts/verify.sh --fast`는 확인 124, 실패 0으로 통과했다. 전체 검증은 E2E 확인 152, 실패 0, 미구현 11이며 42개 시나리오가 모두 실행됐다. 나머지 `SCENARIO_TODO` 때문에 full 종료 코드는 실패다.
+- 별도 복사본에서 미저장 변경 결과를 `interrupted` 대신 `exited`·0으로 추정하는 변형을 전체 `go test -race -count=1 ./...`로 실행했다. SC-25의 두 V 검증 아래 로그 생성·동기화와 DB 결과 손실 사례에서 잘못된 성공 진행을 검출했다.
+
+## SC-42 완료 결과 보존 단정 보강 (2026-09-14)
+
+- 독립 리뷰에서 신호 이후 DB와 그 백업만 비교하면 종료 시점에 이미 손상된 결과를 놓칠 수 있음을 확인했다. SC-42는 이제 신호 전에 이미 성공한 일반 Run과 수동 확인으로 성공한 Run의 전체 조회를 고정한다. 신호 직후, 별도 디렉터리 복원, 데몬 재시작 뒤에 각각 같은 원 스냅샷과 직접 비교한다. 모든 Step 결과와 수동 해소 감사도 비교에 포함하며 시간 예산 필드도 제외하지 않는다.
+- 제품 코드와 시나리오 규범은 바꾸지 않았다. 기존 백업의 전체 테이블 비교에 더해, 종료 이전 관측 결과가 유지됐다는 독립적인 근거를 추가했다.
+- 보강 후 fast는 확인 124·실패 0, full E2E는 확인 152·실패 0·미구현 11(42개 모두 실행)이다. 나머지 TODO 때문에 full은 실패 상태를 유지한다. 별도 복사에서 종료 시 이미 성공한 Run의 Step exit_code만 99로 손상하는 변형을 전체 `go test -race -count=1 ./...`로 실행했고, SC-42/V-01의 SIGTERM·SIGINT가 신호 직후 스냅샷 대조에서 각각 실패했다.
+
+## 저장·취소·설정·연속 시간 예산 통합 (2026-09-14)
+
+- 독립 리뷰를 통과한 저장/종료 복구 `008eb67`을 설정·취소·로그 정리·연속 시간 예산 기반 `e94afc1`에 결합했다. 설정 해시 발행 잠금, 실제 설정의 Run/검사/로그 상한, 취소 확인 콜백, exec 직전 잔여시간 확인과 제한 축소를 모두 유지한다. CLI 전체 계약 진행분은 이 통합에 포함하지 않았다.
+- 시작 및 주기 로그 정리와 취소 유지보수의 저장 오류는 데몬 종료 대신 저장 pause로 연결한다. 저장 점검 통과 전 신규 예약과 외부 명령을 막고 이미 실행 중인 worker는 결과 저장을 계속 시도한다.
+- 결합 과정에서 그룹 밖 자손을 관측한 `untracked_processes` 증거도 미저장 결과와 함께 보존하도록 보강했다. 저장 복구 시 기록된 그룹의 정지만으로 그 증거를 지우지 않는다. SC-25의 추가 사례는 실제 자손이 그룹을 벗어난 상태에서 동기화 실패를 주입하고, 복구 뒤 효과를 인정해 취소해도 프로세스 정지 선언 없이 차단과 검사 슬롯을 유지하는지 대조한다.
+- 통합 fast는 확인 134·실패 0, 최종 full E2E는 확인 198·실패 0·미구현 5(42개 모두 실행)이다. SC-28~30·31·41 TODO만 남아 전체 완료는 아직 아니다. 초기 추가 사례의 JSON 필드명 오타를 실제 `untracked_processes` 계약에 맞춘 후 전체 검증을 다시 실행했다.
+- 최종 테스트 트리의 별도 복사에서 저장 복구의 `untracked_processes` 보존만 제거한 변형을 전체 `go test -race -count=1 ./...`로 실행했다. SC-25/V-02/untracked-sync-result가 `blocked:process_unknown` 대신 `blocked:check_error`로 바뀐 것을 직접 검출했다. 최종 원본 검증 로그는 `/tmp/storage-integration-full-final.log`, 최종 변형 로그는 `/tmp/storage-untracked-mutant-final-full.log`, 재현 패치는 `/tmp/storage-untracked-mutation.patch`다. 실제 외부 업무 L3와 CLI 관측 heartbeat 결합은 이번 병합에서 수행하지 않았다.

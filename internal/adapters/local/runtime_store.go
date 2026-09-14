@@ -29,7 +29,15 @@ func (s *Store) initRuntime() error {
  INSERT OR IGNORE INTO runtime_migrations(name) VALUES('check_slots');`)
 	return e
 }
-func (s *Store) Reserve() (*domain.Execution, error) {
+func (s *Store) Reserve() (execution *domain.Execution, err error) {
+	if s.storagePaused() {
+		return nil, nil
+	}
+	defer func() {
+		if err != nil {
+			s.PauseStorage(err)
+		}
+	}()
 	tx, e := s.db.Begin()
 	if e != nil {
 		return nil, e
@@ -171,7 +179,12 @@ func (s *Store) Reserve() (*domain.Execution, error) {
 	}
 	return &x, tx.Commit()
 }
-func (s *Store) Started(p domain.ProcessIdentity) error {
+func (s *Store) Started(p domain.ProcessIdentity) (err error) {
+	defer func() {
+		if err != nil {
+			s.PauseStorage(err)
+		}
+	}()
 	result, e := s.db.Exec("UPDATE steps SET pid=?,pgid=?,boot_id=?,process_start=? WHERE id=? AND result IS NULL", p.PID, p.PGID, p.BootID, p.ProcessStart, p.StepID)
 	if e != nil {
 		return e
@@ -182,7 +195,12 @@ func (s *Store) Started(p domain.ProcessIdentity) error {
 	}
 	return e
 }
-func (s *Store) Complete(x domain.Execution, o domain.Outcome, next string) error {
+func (s *Store) Complete(x domain.Execution, o domain.Outcome, next string) (err error) {
+	defer func() {
+		if err != nil {
+			s.failedExecution(x, o, err)
+		}
+	}()
 	tx, e := s.db.Begin()
 	if e != nil {
 		return e

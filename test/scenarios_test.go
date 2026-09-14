@@ -289,13 +289,8 @@ func TestScenario_SC_24(t *testing.T) {
 
 // TestScenario_SC_25: DB·디스크 쓰기 실패
 func TestScenario_SC_25(t *testing.T) {
-	todo(t, "SC-25")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-25")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-25")
-	})
+	verify(t, "V-01", storageAdmissionFailures)
+	verify(t, "V-02", storageLostResults)
 }
 
 // TestScenario_SC_26: 출력 폭주·멈춘 검사
@@ -432,11 +427,6 @@ func TestScenario_SC_41(t *testing.T) {
 
 // TestScenario_SC_42: 종료 신호와 일관된 저장 복구
 func TestScenario_SC_42(t *testing.T) {
-	todo(t, "SC-42")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-42")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-42")
-	})
+	verify(t, "V-01", signalAndBackup)
+	verify(t, "V-02", storageTransactionBoundaries)
 }
