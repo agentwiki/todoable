@@ -365,3 +365,12 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - SC-29는 `--deep`에서 실제 ImageMagick/Pillow를 실행한다. 이 시나리오의 exact=false 핵심 변형은 독립 리뷰와 오케스트레이터가 전체 deep race에서 SC-29/V-01·V-02 실패로 재현했으므로 이번 문서·테스트 병합에서 동일 변형을 새로 추가하지 않았다. CLI heartbeat 결합의 독립 통합 리뷰는 별도 범위다.
 
 - 중단 요청 시 진행 중이던 `scripts/verify.sh --deep`는 이미 완료됐다. fast 확인 136·실패 0, deep 확인 210·실패 0·미구현 2(SC-28·30)·건너뜀 0, 42개 모두 실행이다. 전체 종료는 TODO 때문에 1이며 로그는 `/tmp/sc29-cli-integration-deep.log`다. 이 병합의 독립 리뷰 및 기반 CLI heartbeat 통합 리뷰가 미완이므로 메인에 반영하지 않고 중단 체크포인트로 보존했다. 새 검증·변형·훅은 중단 요청 뒤 시작하지 않았다.
+
+
+## CLI·저장 관측·실제 변환 통합 재개 (2026-09-14)
+
+- 메인 `2f9a820`에 기반한 CLI·저장 관측 `a4e310b`와 실제 변환 `ac309fd` 체크포인트를 별도 작업트리에서 재개했다. 기존 제품 코드·fixture·라이선스와 중단 기록을 보존했다. 현재 사용자 편집의 `docs/scenarios.md`를 검증 규범으로 복사하여 사용했으며 이 통합 커밋에는 그 편집을 포함하지 않는다.
+- 메인은 현재 규범으로 기존 기반의 기본 검증을 직접 실행하여 fast 확인 134·실패 0, E2E 확인 198·실패 0·미구현 5·건너뜀 0, 42개 모두 실행을 확인했다(`/tmp/goal-current-full.log`). 새 결합의 독립 리뷰는 SC-25 관측 실패 pause/복구, SC-29 실제 변환, SC-31 전체 취소, SC-41 관측 배선에서 차단 결함을 발견하지 않았다(`/tmp/todoable-independent-audit-sc38/review.md`).
+- 통합의 `scripts/verify.sh --deep`는 fast 확인 136·실패 0, E2E 확인 210·실패 0·미구현 2(SC-28·30)·건너뜀 0, 42개 모두 실행이다(`/tmp/remaining-current-deep.log`). SC-29는 실제 ImageMagick 7.1.1-43 Q16과 Pillow 11.1.0으로 원본별 변환·실패 격리·재전송 보존을 확인했다. TODO 때문에 전체 종료 코드는 1이다.
+- 동시에 수행한 최초 기본 검증은 SC-22/V-02/agent와 SC-37/V-01에서 실패했다(`/tmp/remaining-current-full.log`, 확인 202·실패 5·TODO 2·skip 1). 당시 도구가 단정문 진단을 버려 원인은 확정할 수 없으며 부하 때문이라고 판정하지 않는다. 코드나 단정을 변경하지 않은 재실행에서는 fast 확인 136·실패 0, E2E 확인 207·실패 0·TODO 2·skip 1, 42개 모두 실행으로 두 실패가 재현되지 않았다(`/tmp/remaining-current-full-recheck.log`). 재실행의 원본 이벤트는 `/tmp/remaining-current-full-recheck.events.jsonl`에 보존했다. 기본 모드의 SC-29 skip은 L3 실행 조건이며 전체 종료는 1이다.
+- SC-28·30은 이 통합 범위에 포함하지 않는다. 제품 전체 완료는 아직 아니며 실제 호스트 장애·arm64 실환경도 이번 검증 대상이 아니다. 새 무력화 변형은 추가하지 않았고, 기존 exact=false·과거 Task 버전 무시 변형의 독립/메인 검출 증거를 보존했다. 진단 유실을 개선하는 별도 도구 커밋 `9d77279`와 독립 원본/출력 제거 검증(`/tmp/todoable-review-report-original.log`, `/tmp/todoable-review-report-output.log`)은 후속 통합 대상으로 유지한다.
