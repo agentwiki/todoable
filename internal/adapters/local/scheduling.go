@@ -78,7 +78,10 @@ func finishRun(tx *sql.Tx, x domain.Execution) error {
 		return e
 	}
 	if remaining == 0 {
-		_, e := tx.Exec("UPDATE submissions SET state='completed' WHERE id=?", x.SubmissionID)
+		if _, e := tx.Exec("UPDATE submissions SET state='completed' WHERE id=?", x.SubmissionID); e != nil {
+			return e
+		}
+		_, e := tx.Exec("INSERT OR IGNORE INTO completion_times VALUES(?,?)", x.SubmissionID, time.Now().UnixNano())
 		return e
 	}
 	id, e := uuid()

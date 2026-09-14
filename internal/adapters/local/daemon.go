@@ -13,9 +13,10 @@ import (
 )
 
 type Daemon struct {
-	lock    *os.File
-	context context.Context
-	stop    context.CancelFunc
+	lock        *os.File
+	context     context.Context
+	stop        context.CancelFunc
+	nextCleanup time.Time
 }
 
 func (s *Store) Daemon() (*Daemon, error) {
@@ -27,8 +28,20 @@ func (s *Store) Daemon() (*Daemon, error) {
 		_ = lock.Close()
 		return nil, &domain.Fault{Code: 6, Kind: "daemon_running", Message: "a daemon owns this data directory"}
 	}
+
+	if e = lock.Truncate(0); e == nil {
+		_, e = lock.WriteAt([]byte(s.ConfigHash()), 0)
+	}
+	if e == nil {
+		e = lock.Sync()
+	}
+	if e != nil {
+		_ = lock.Close()
+		return nil, e
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	e = s.recoverIntents(ctx)
+
 	if e != nil {
 		stop()
 		_ = lock.Close()
@@ -49,6 +62,18 @@ func (d *Daemon) Close() error { d.stop(); return d.lock.Close() }
 func (d *Daemon) Stopped(err error) bool {
 	return errors.Is(err, context.Canceled) || d.context.Err() != nil
 }
-func (s *Store) Executor() *Runner { return &Runner{Dir: s.dir, Started: s.Started} }
+func (s *Store) Executor() *Runner {
+	return &Runner{Dir: s.dir, Started: s.Started, LogBytes: s.config.StepLogBytes}
+}
 
 func (d *Daemon) Stop() { d.stop() }
+
+// CleanupDue is called only by the daemon's single maintenance loop.
+func (d *Daemon) CleanupDue() bool {
+	now := time.Now()
+	if now.Before(d.nextCleanup) {
+		return false
+	}
+	d.nextCleanup = now.Add(time.Second)
+	return true
+}

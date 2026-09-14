@@ -40,9 +40,9 @@ func (s *Store) Reserve() (*domain.Execution, error) {
  WHERE r.state IN ('waiting','running') AND (rt.next_at<=? OR (rs.wait_deadline>0 AND rs.wait_deadline<=? AND rt.stage='start_check' AND rt.phase='preflight'))
  AND NOT EXISTS(SELECT 1 FROM steps st WHERE st.run_id=r.id AND st.result IS NULL)
  AND NOT EXISTS(SELECT 1 FROM submissions older WHERE older.task_id=s.task_id AND older.input_key=s.input_key AND older.seq<s.seq AND older.state='active')
- AND (rt.stage!='ready' OR (NOT EXISTS(SELECT 1 FROM resources WHERE key=s.concurrency_key) AND (SELECT count(*) FROM run_schedule WHERE slot_held=1)<2))
- AND ((rt.stage NOT IN ('start_check','finish_check') AND (rt.stage!='ready' OR (json_type(s.snapshot,'$.start') IS NULL AND json_array_length(s.snapshot,'$.before')>0))) OR (SELECT count(*) FROM check_slots)<4)
- ORDER BY CASE WHEN r.state='running' THEN 0 WHEN rt.stage='start_check' THEN 1 ELSE 2 END,coalesce(q.seq,s.seq) LIMIT 1`, now, now).Scan(&x.RunID, &x.SubmissionID, &x.TaskID, &x.TaskVersion, &x.InputKey, &input, &x.RunSeq, &x.CallIndex, &snap, &x.Stage, &x.Phase, &last, &remaining, &started, &deadline)
+ AND (rt.stage!='ready' OR (NOT EXISTS(SELECT 1 FROM resources WHERE key=s.concurrency_key) AND (SELECT count(*) FROM run_schedule WHERE slot_held=1)<?))
+ AND ((rt.stage NOT IN ('start_check','finish_check') AND (rt.stage!='ready' OR (json_type(s.snapshot,'$.start') IS NULL AND json_array_length(s.snapshot,'$.before')>0))) OR (SELECT count(*) FROM check_slots)<?)
+ ORDER BY CASE WHEN r.state='running' THEN 0 WHEN rt.stage='start_check' THEN 1 ELSE 2 END,coalesce(q.seq,s.seq) LIMIT 1`, now, now, s.config.MaxRunningRuns, s.config.MaxCheckProcesses).Scan(&x.RunID, &x.SubmissionID, &x.TaskID, &x.TaskVersion, &x.InputKey, &input, &x.RunSeq, &x.CallIndex, &snap, &x.Stage, &x.Phase, &last, &remaining, &started, &deadline)
 	if errors.Is(e, sql.ErrNoRows) {
 		return nil, tx.Commit()
 	}

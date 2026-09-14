@@ -49,6 +49,11 @@ func run(args []string) int {
 		return local.Fail(err)
 	}
 	defer func() { _ = store.Close() }()
+	if command != "run show" {
+		if err = store.CheckCLIConfig(); err != nil {
+			return local.Fail(err)
+		}
+	}
 	var value any
 	switch command {
 	case "task enable", "task disable":
@@ -99,16 +104,26 @@ func daemon(dir string) int {
 		return local.Fail(err)
 	}
 	defer func() { _ = d.Close() }()
+	if err = store.CleanupLogs(); err != nil {
+		return local.Fail(err)
+	}
 	if err = usecases.PublishSchedules(store); err != nil {
 		return local.Fail(err)
 	}
 	runner := store.Executor()
 	var workers sync.WaitGroup
-	errors := make(chan error, 7)
+	errors := make(chan error, store.WorkerCount()+1)
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
 		for d.Context().Err() == nil {
+			if d.CleanupDue() {
+				if e := store.CleanupLogs(); e != nil {
+					errors <- e
+					d.Stop()
+					return
+				}
+			}
 			if e := usecases.PublishSchedules(store); e != nil {
 				errors <- e
 				d.Stop()
@@ -119,7 +134,7 @@ func daemon(dir string) int {
 			}
 		}
 	}()
-	for range 6 {
+	for range store.WorkerCount() {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()

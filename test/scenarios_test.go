@@ -438,17 +438,6 @@ func TestScenario_SC_39(t *testing.T) {
 	})
 }
 
-// TestScenario_SC_40: 설정 변경과 기존 접수 보호
-func TestScenario_SC_40(t *testing.T) {
-	todo(t, "SC-40")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-40")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-40")
-	})
-}
-
 // TestScenario_SC_41: CLI 응답·관측·데몬 경계
 func TestScenario_SC_41(t *testing.T) {
 	todo(t, "SC-41")

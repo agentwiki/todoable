@@ -1,10 +1,15 @@
 package local
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"github.com/agentwiki/todoable/internal/domain"
+	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -71,6 +76,37 @@ func (s *Store) ReadSubmission(path string) ([]byte, error) {
 	return ReadFileLimit(path, s.config.MaxInputBytes+16384)
 }
 
+func (s *Store) ConfigHash() string {
+	raw, _ := json.Marshal(s.config)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// CheckCLIConfig compares against the configuration held by the live lock owner.
+// Stale lock contents have no authority after the daemon exits.
+func (s *Store) CheckCLIConfig() error {
+	lock, e := os.OpenFile(filepath.Join(s.dir, "daemon.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if e != nil {
+		return e
+	}
+	defer func() { _ = lock.Close() }()
+	e = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if e == nil {
+		return nil
+	}
+	if !errors.Is(e, syscall.EWOULDBLOCK) {
+		return e
+	}
+	raw, e := io.ReadAll(io.LimitReader(lock, 65))
+	if e != nil {
+		return e
+	}
+	if string(raw) != s.ConfigHash() {
+		return &domain.Fault{Code: 6, Kind: "config_mismatch", Message: "configuration differs from running daemon; restart the daemon"}
+	}
+	return nil
+}
+func (s *Store) WorkerCount() int { return s.config.MaxRunningRuns + s.config.MaxCheckProcesses }
 func validateTaskCaps(task domain.Task, config Config) error {
 	if task.Repeat > config.MaxRepeat || task.Finish.MaxCalls > config.MaxCallsPerRun {
 		return domain.Invalid("selected Task version exceeds current installation caps")
