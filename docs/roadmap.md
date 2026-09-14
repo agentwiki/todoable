@@ -374,3 +374,17 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 통합의 `scripts/verify.sh --deep`는 fast 확인 136·실패 0, E2E 확인 210·실패 0·미구현 2(SC-28·30)·건너뜀 0, 42개 모두 실행이다(`/tmp/remaining-current-deep.log`). SC-29는 실제 ImageMagick 7.1.1-43 Q16과 Pillow 11.1.0으로 원본별 변환·실패 격리·재전송 보존을 확인했다. TODO 때문에 전체 종료 코드는 1이다.
 - 동시에 수행한 최초 기본 검증은 SC-22/V-02/agent와 SC-37/V-01에서 실패했다(`/tmp/remaining-current-full.log`, 확인 202·실패 5·TODO 2·skip 1). 당시 도구가 단정문 진단을 버려 원인은 확정할 수 없으며 부하 때문이라고 판정하지 않는다. 코드나 단정을 변경하지 않은 재실행에서는 fast 확인 136·실패 0, E2E 확인 207·실패 0·TODO 2·skip 1, 42개 모두 실행으로 두 실패가 재현되지 않았다(`/tmp/remaining-current-full-recheck.log`). 재실행의 원본 이벤트는 `/tmp/remaining-current-full-recheck.events.jsonl`에 보존했다. 기본 모드의 SC-29 skip은 L3 실행 조건이며 전체 종료는 1이다.
 - SC-28·30은 이 통합 범위에 포함하지 않는다. 제품 전체 완료는 아직 아니며 실제 호스트 장애·arm64 실환경도 이번 검증 대상이 아니다. 새 무력화 변형은 추가하지 않았고, 기존 exact=false·과거 Task 버전 무시 변형의 독립/메인 검출 증거를 보존했다. 진단 유실을 개선하는 별도 도구 커밋 `9d77279`와 독립 원본/출력 제거 검증(`/tmp/todoable-review-report-original.log`, `/tmp/todoable-review-report-output.log`)은 후속 통합 대상으로 유지한다.
+
+## testreport 실패 진단 보존 (2026-09-14)
+
+- SC-06·36 진단 중 기존 testreport가 `Output`을 skip 사유에만 사용해 실패의 파일·행과 원시 오류를 버리는 문제를 확인했다. 이제 실패·미완료 테스트 및 실패 패키지는 이름 아래 원본 출력 조각을 순서대로 보존한다. 모든 패키지 실패를 테스트 밖 실패라고 단정하던 문구는 원인 중립적인 패키지 실패 표시로 바꿨다. TODO·환경 skip·시나리오 관측 및 종료 코드 판정은 변경하지 않았다.
+- 도구 자기검증에서 실제 임시 Go 모듈의 하위 단정 실패, panic 스택, data race, TestMain의 종료 2와 정상 패키지를 함께 실행해 파일·행·여러 줄 진단과 패키지 귀속을 확인한다. 별도 이벤트 스트림은 미완료 테스트의 분할 출력·마지막 개행 부재·같은 테스트 이름의 다른 패키지 귀속을 대조한다. 실제 Go 버전은 TestMain 실패에 항상 `exit status 2` 문자열을 내지 않으므로 실제 발생한 명시 진단과 패키지 fail을 검사한다.
+- 제품 게이트보다 먼저 `go test -race -count=1 ./tools/testreport`를 실제 통과했다(`/tmp/testreport-diagnostics-self.log`). fast 확인 124·실패 0, full 확인 139·실패 0·미구현 13이며 승인된 main `8214fa0`의 구현 29개 시나리오를 유지한다. 로그 `/tmp/testreport-diagnostics-fast.log`, `/tmp/testreport-diagnostics-full.log`. SC-40 제품 변경은 이 도구 분기에 포함하지 않았고 남은 TODO 때문에 full 전체는 실패다.
+- 별도 복사 `/tmp/todoable-testreport-output-mutation`에서 원문 출력 한 줄을 무력화한 뒤 전체 `go test -race -count=1 ./...`를 실행했다. 종료 1이며 새 미완료 출력·실제 Go 실패 진단 자기검증이 모두 누락을 검출한다(`/tmp/testreport-diagnostics-mutation.log`). 선택적 원시 로그 디렉터리·tee 및 실환경 L3는 이번 진단 손실 수정에 필요하지 않아 추가하거나 실행하지 않았다.
+
+
+## 실패 진단 도구 재통합과 핵심 주장 재현 (2026-09-14)
+
+- 제품 통합 검증에서 실제 실패의 파일·행이 유실되는 문제에 대응하여 기존 독립 검증된 도구 커밋 `9d77279`를 별도 병합했다. CLI·실제 변환 제품 코드는 바꾸지 않았으며 양쪽 roadmap 기록을 보존했다. 이후 실패는 `scripts/verify.sh`의 출력에서 실제 단정문·panic·race·패키지 진단을 확인할 수 있다.
+- 현재 규범의 `scripts/verify.sh --fast`는 도구 자기검증을 제품 게이트보다 먼저 실행하고 확인 138·실패 0으로 통과했다(`/tmp/remaining-current-testreport-fast.log`). 과거 원문 출력 제거 변형과 독립 재현은 기존 기록 그대로 유효하다. 이 도구 병합 뒤 제품 전체 검증은 SC-28·30 최종 통합에서 수행할 예정이며 빠른 검증만으로 전체 제품 완료를 주장하지 않는다.
+- 오케스트레이터가 실제 exec 직전 잔여 예산 검사를 제거하는 SC-38 핵심 변형을 별도 유효 작업트리의 전체 `go test -race -count=1 ./...`로 재현했다. SC-38/V-01의 delayed-exec와 delayed-limited-exec만 예상 의미 단정에서 실패했고 테스트 패키지 225.577초·종료 1이었다(`/tmp/todoable-independent-orchestrator-exec-budget.log`). 독립 리뷰에서 보였던 추가 VCS fixture 오류는 이 재현에 없었다. 원본 제품 코드는 변형하지 않았다.

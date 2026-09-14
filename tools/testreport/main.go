@@ -54,6 +54,7 @@ type Result struct {
 	Name   string // pkg 또는 pkg.Test
 	Status string // pass, fail, skip, todo, unknown
 	Reason string // skip 과 todo 의 사유
+	Output string // 해당 테스트 또는 패키지의 원본 출력
 }
 
 // Report 는 이벤트 스트림을 분류한 결과다.
@@ -101,7 +102,7 @@ func Parse(r io.Reader) (Report, error) {
 	}
 	var rep Report
 	for _, k := range order {
-		res := Result{Status: status[k]}
+		res := Result{Status: status[k], Output: strings.Join(output[k], "")}
 		if k.test == "" {
 			res.Name = k.pkg
 			rep.Packages = append(rep.Packages, res)
@@ -266,6 +267,9 @@ func SummaryWithScenarios(rep Report, todoFails, requireTests bool, spec Scenari
 			} else {
 				fmt.Fprintf(w, "   %s\n", it.Name)
 			}
+			if status == "fail" || status == "unknown" {
+				printOutput(w, it.Output)
+			}
 		}
 	}
 	list("fail", "실패")
@@ -273,7 +277,13 @@ func SummaryWithScenarios(rep Report, todoFails, requireTests bool, spec Scenari
 	list("todo", "미구현 시나리오")
 	list("skip", "건너뛴 항목(환경 부족)")
 	if failedPkgs > 0 {
-		fmt.Fprintf(w, "\n실패한 패키지 %d 개 (테스트 밖 실패. TestMain, 초기화, 빌드)\n", failedPkgs)
+		fmt.Fprintf(w, "\n실패한 패키지 %d 개\n", failedPkgs)
+		for _, p := range rep.Packages {
+			if p.Status == "fail" {
+				fmt.Fprintf(w, "   %s\n", p.Name)
+				printOutput(w, p.Output)
+			}
+		}
 	}
 	fmt.Fprintf(w, "\n확인 %d, 실패 %d, 미구현 %d, 건너뜀 %d",
 		count["pass"], count["fail"]+count["unknown"], count["todo"], count["skip"])
@@ -288,6 +298,17 @@ func SummaryWithScenarios(rep Report, todoFails, requireTests bool, spec Scenari
 	}
 	fmt.Fprintln(w)
 	return code
+}
+
+// Preserve newlines and source positions, including split panic/race output.
+func printOutput(w io.Writer, output string) {
+	if output == "" {
+		return
+	}
+	fmt.Fprint(w, output)
+	if !strings.HasSuffix(output, "\n") {
+		fmt.Fprintln(w)
+	}
 }
 
 func main() {
