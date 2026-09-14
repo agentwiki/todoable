@@ -87,6 +87,7 @@ func configRuntimeChange(t *testing.T) {
 	a := submitCore(t, f, "runtime", "A", "A", map[string]any{"label": "A", "before_gate": gate})
 	b := submitCore(t, f, "runtime", "B", "B", map[string]any{"label": "B", "before_gate": gate})
 	stop := configDaemon(t, f)
+	f.rejected(t, 5, "daemon_running", "daemon")
 	waitExternal(t, f, "A", "before", 1)
 	waitExternal(t, f, "B", "before", 1)
 	if n := configCount(t, f, "SELECT count(*) FROM run_schedule WHERE slot_held=1"); n != 2 {

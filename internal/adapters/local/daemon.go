@@ -20,6 +20,11 @@ type Daemon struct {
 }
 
 func (s *Store) Daemon() (*Daemon, error) {
+	publication, e := s.configPublication(syscall.LOCK_EX)
+	if e != nil {
+		return nil, e
+	}
+	defer func() { _ = publication.Close() }()
 	lock, e := os.OpenFile(filepath.Join(s.dir, "daemon.lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if e != nil {
 		return nil, e
@@ -36,7 +41,7 @@ func (s *Store) Daemon() (*Daemon, error) {
 		}
 		if !time.Now().Before(deadline) {
 			_ = lock.Close()
-			return nil, &domain.Fault{Code: 6, Kind: "daemon_running", Message: "a daemon owns this data directory"}
+			return nil, &domain.Fault{Code: 5, Kind: "daemon_running", Message: "a daemon owns this data directory"}
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -53,6 +58,7 @@ func (s *Store) Daemon() (*Daemon, error) {
 		_ = lock.Close()
 		return nil, e
 	}
+	_ = publication.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	e = s.recoverIntents(ctx)
 

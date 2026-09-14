@@ -85,6 +85,11 @@ func (s *Store) ConfigHash() string {
 // CheckCLIConfig compares against the configuration held by the live lock owner.
 // Stale lock contents have no authority after the daemon exits.
 func (s *Store) CheckCLIConfig() error {
+	publication, e := s.configPublication(syscall.LOCK_SH)
+	if e != nil {
+		return e
+	}
+	defer func() { _ = publication.Close() }()
 	lock, e := os.OpenFile(filepath.Join(s.dir, "daemon.lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if e != nil {
 		return e
@@ -130,4 +135,29 @@ func validateTaskCaps(task domain.Task, config Config) error {
 		}
 	}
 	return nil
+}
+
+// configPublication serializes ownership changes and hash publication with CLI
+// observations. It is separate from the daemon lifetime lock and never renamed.
+func (s *Store) configPublication(mode int) (*os.File, error) {
+	lock, e := os.OpenFile(filepath.Join(s.dir, "daemon-publication.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if e != nil {
+		return nil, e
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		e = syscall.Flock(int(lock.Fd()), mode|syscall.LOCK_NB)
+		if e == nil {
+			return lock, nil
+		}
+		if !errors.Is(e, syscall.EWOULDBLOCK) {
+			_ = lock.Close()
+			return nil, e
+		}
+		if !time.Now().Before(deadline) {
+			_ = lock.Close()
+			return nil, &domain.Fault{Code: 5, Kind: "config_busy", Message: "daemon configuration publication is busy; retry"}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
