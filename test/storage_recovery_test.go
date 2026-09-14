@@ -250,7 +250,19 @@ func signalAndBackup(t *testing.T) {
 			b := submitOrder(t, f, map[string]any{"label": "interrupted", "before_gate": gate}, "interrupted")
 			waitExternal(t, f, "interrupted", "before", 1)
 			c := submitOrder(t, f, map[string]any{"label": "queued"}, "queued")
+			// Preserve the observations made before shutdown. Comparing a backup only
+			// to the post-shutdown database cannot detect corruption during shutdown.
+			completedBeforeSignal := map[string]map[string]any{}
+			for _, completed := range []map[string]any{a, audit} {
+				id := completed["run_id"].(string)
+				view := f.call(t, "run", "show", id, "--json")
+				if view["state"] != "succeeded" || len(view["steps"].([]any)) == 0 {
+					t.Fatalf("missing completed baseline: %v", view)
+				}
+				completedBeforeSignal[id] = view
+			}
 			stop(sig)
+			assertCompletedPreserved(t, f, completedBeforeSignal)
 			observed := f.call(t, "run", "show", b["run_id"].(string), "--json")
 			if observed["stage"] != "blocked:outcome_unknown" || observed["cancel_requested"] != false {
 				t.Fatalf("signal outcome %v", observed)
@@ -271,6 +283,7 @@ func signalAndBackup(t *testing.T) {
 			}
 			restored := f
 			restored.dir = backupDir
+			assertCompletedPreserved(t, restored, completedBeforeSignal)
 			for _, submission := range []map[string]any{a, audit, b, c} {
 				id := submission["run_id"].(string)
 				original := f.call(t, "run", "show", id, "--json")
@@ -284,6 +297,7 @@ func signalAndBackup(t *testing.T) {
 			assertDatabaseBackup(t, db, restored.database(t))
 			storageDaemon(t, f)
 			time.Sleep(1200 * time.Millisecond)
+			assertCompletedPreserved(t, f, completedBeforeSignal)
 			if got := f.call(t, "run", "show", b["run_id"].(string), "--json"); got["stage"] != "blocked:outcome_unknown" {
 				t.Fatalf("restart cleared block %v", got)
 			}
@@ -295,6 +309,16 @@ func signalAndBackup(t *testing.T) {
 		})
 	}
 }
+func assertCompletedPreserved(t *testing.T, f runtimeFixture, snapshots map[string]map[string]any) {
+	t.Helper()
+	for id, before := range snapshots {
+		after := f.call(t, "run", "show", id, "--json")
+		if !reflect.DeepEqual(before, after) {
+			t.Fatalf("completed Run/Step changed after signal or restore: before=%v after=%v", before, after)
+		}
+	}
+}
+
 func assertDatabaseBackup(t *testing.T, a, b *sql.DB) {
 	t.Helper()
 	rows, err := a.Query("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
