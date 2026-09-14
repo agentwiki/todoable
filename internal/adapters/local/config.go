@@ -90,21 +90,28 @@ func (s *Store) CheckCLIConfig() error {
 		return e
 	}
 	defer func() { _ = lock.Close() }()
-	e = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-	if e == nil {
-		return nil
+	deadline := time.Now().Add(time.Second)
+	for {
+		e = syscall.Flock(int(lock.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+		if e == nil {
+			return nil
+		}
+		if !errors.Is(e, syscall.EWOULDBLOCK) {
+			return e
+		}
+		raw := make([]byte, 65)
+		n, readErr := lock.ReadAt(raw, 0)
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return readErr
+		}
+		if string(raw[:n]) == s.ConfigHash() {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			return &domain.Fault{Code: 6, Kind: "config_mismatch", Message: "configuration differs from running daemon; restart the daemon"}
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	if !errors.Is(e, syscall.EWOULDBLOCK) {
-		return e
-	}
-	raw, e := io.ReadAll(io.LimitReader(lock, 65))
-	if e != nil {
-		return e
-	}
-	if string(raw) != s.ConfigHash() {
-		return &domain.Fault{Code: 6, Kind: "config_mismatch", Message: "configuration differs from running daemon; restart the daemon"}
-	}
-	return nil
 }
 func (s *Store) WorkerCount() int { return s.config.MaxRunningRuns + s.config.MaxCheckProcesses }
 func validateTaskCaps(task domain.Task, config Config) error {

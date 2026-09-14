@@ -178,3 +178,12 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 낮아진 완료 로그 총량을 적용한 재시작 뒤 상세 파일의 실제 삭제와 동일 Run 조회·중복 재전송 보존을 확인했다. SC-27의 기간/총량 순서 및 진행·차단 로그와 모든 복구·감사 이력 보존에 대한 전체 E2E는 후속으로 남겨 해당 TODO를 유지한다. 저장 실패 시 storage_paused 전이는 SC-25의 후속 범위이며 정리 오류를 성공으로 숨기지 않는다. L3 외부 업무 검증은 이번 로컬 설정 변경 범위에 포함하지 않았다.
 - 최종 SC-40 제품 변경을 포함한 full은 처음 SC-09/V-02의 알려진 ready 순서 경합으로 실패했다(`/tmp/config-runtime-final-full.log`, 확인 112·실패 2). 독립 리뷰가 승인한 SC-09 테스트 수정 `f7cc479`를 `84d27fc`로 가져온 뒤 다시 실행한 full은 확인 114·실패 0·미구현 14이며 구현 28개 시나리오의 모든 V가 통과했다. fast는 확인 122·실패 0이다. 최종 로그 `/tmp/config-runtime-sc09-fixed-full.log`; 전체 완료는 남은 TODO 때문에 아니다.
 - 최종 SC-40 제품과 테스트를 복사한 `/tmp/todoable-config-final-{hash,running,step,completed}`에서 네 변형을 각각 전체 `go test -race -count=1 ./...`로 실행했고 모두 SC-40/V-01에서 실패했다. 해시 비교 무력화는 코드 6 대신 코드 2까지 진행, Run 상한 기본값 고정은 재시작 후 슬롯 2, Step 상한 제거는 64 대신 192바이트, 완료 로그 초과 조건 무력화는 파일 삭제 누락으로 검출했다. 로그 `/tmp/config-runtime-final-{hash,running,step,completed}.log`에 보존한다. 이 복사들은 SC-09의 후속 테스트 순서 수정 전이며 SC-40 제품·검증 코드는 최종 커밋과 같다.
+
+
+## SC-40 1차 독립 리뷰 보강 (2026-09-14)
+
+- 완료 로그 보존 기간을 무력화해도 통과했던 검증 공백을 보강했다. 총량은 기본 1 GiB로 충분하게 두고 기본 720h에서 유지되는 실제 완료 로그를 관측한 뒤, 기간만 1ns로 변경하고 실제 데몬을 재시작해 삭제 및 Run 조회·중복 접수 보존을 대조한다. SC-27의 전체 감사 보존 계약은 아직 TODO다.
+- 최초 보강 full에서 SC-06/V-01·SC-36/V-02 실패가 나왔다(`/tmp/config-runtime-review1-full.log`). SC-06 원시 로그는 데몬 없는 동시 CLI가 서로의 독점 probe를 데몬으로 오인하는 제품 경합을 확인했다(`/tmp/config-runtime-review1-raw-regression.log`). CLI probe를 공유 잠금으로 바꾸고, 실제 동시 CLI 및 공유 probe 동안 데몬 시작 회귀를 추가했다.
+- 최초 SC-36 실패 상세는 보고서에 남지 않아 같은 원인이라고 단정하지 않는다. 전체 SC-36 원시 반복은 통과했으나, 별도 복사에서 해시 truncate/write 사이에 200ms를 넣으면 SC-36/V-02의 정상 일정 제출이 config_mismatch로 거부됨을 재현했다(`/tmp/config-runtime-startup-diagnostic.log`). 데몬은 동일 잠금 inode에서 고정 길이 해시를 먼저 덮어쓴 후 길이를 정리하고, CLI는 해시 공개와 잠금 전환을 최대 1초만 재시도한다. rename으로 잠금 inode를 교체하면 독점 보호가 분리되므로 사용하지 않았다. 데몬의 공유 probe 경합도 최대 1초만 재시도하며 실제 중복 데몬·다른 설정은 여전히 코드 6으로 거부되는 대조를 추가했다.
+- 최종 fast 확인 127·실패 0, full 확인 114·실패 0·미구현 14다. 로그 `/tmp/config-runtime-review1-fixed-fast.log`, `/tmp/config-runtime-review1-fixed-full.log`. SC-06·36·40 묶음의 원시 race 반복 2회도 통과했다(`/tmp/config-runtime-lock-fixed-regressions.log`). 남은 TODO로 full 전체는 실패하며 외부 L3는 실행하지 않았다.
+- 최종 소스와 SC-09 순서 수정을 포함한 별도 복사 `/tmp/todoable-config-review1-final-{retention,client,publish,daemon}`에서 각각 기간 적용 제거, CLI 독점 probe 복원, 공개 대기 제거, 데몬 획득 대기 제거를 전체 `go test -race -count=1 ./...`로 실행했다. 네 실행 모두 종료 1: 앞 두 변형은 SC-40/V-01, 뒤 두 변형은 각각 공개 대기·공유 probe 회귀에서 실패했다. 로그 `/tmp/config-runtime-review1-final-{retention,client,publish,daemon}.log`. 원 작업트리는 변형하지 않았다.

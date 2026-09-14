@@ -13,7 +13,13 @@ import (
 )
 
 func TestScenario_SC_40(t *testing.T) {
-	verify(t, "V-01", func(t *testing.T) { configRuntimeChange(t); configCheckLimit(t); configCompletedLogRestart(t) })
+	verify(t, "V-01", func(t *testing.T) {
+		configConcurrentClients(t)
+		configRuntimeChange(t)
+		configCheckLimit(t)
+		configCompletedLogRestart(t, false)
+		configCompletedLogRestart(t, true)
+	})
 	verify(t, "V-02", func(t *testing.T) { configAdmissionChange(t) })
 }
 func configDaemon(t *testing.T, f runtimeFixture) func() {
@@ -305,7 +311,7 @@ func configAdmissionChange(t *testing.T) {
 	stop()
 }
 
-func configCompletedLogRestart(t *testing.T) {
+func configCompletedLogRestart(t *testing.T, age bool) {
 	f := orderFixture(t, 0, "0s", "0s")
 	script := strings.Replace(orderScript, "gates=inp.get(s+'_gates',{})", "print('completed details',flush=True)\ngates=inp.get(s+'_gates',{})", 1)
 	writeTest(t, filepath.Join(f.root, "runner.py"), []byte(script), 0700)
@@ -327,8 +333,21 @@ func configCompletedLogRestart(t *testing.T) {
 	if len(paths) == 0 {
 		t.Fatal("no completed log paths")
 	}
+	if age {
+		// Observe the original long retention through a complete maintenance interval.
+		time.Sleep(1100 * time.Millisecond)
+		for _, path := range paths {
+			if _, e := os.Stat(path); e != nil {
+				t.Fatalf("young logs removed before retention change: %v", e)
+			}
+		}
+	}
 	stop()
-	writeTest(t, filepath.Join(f.dir, "config.yaml"), []byte("completed_log_bytes: 1"), 0600)
+	config := "completed_log_bytes: 1"
+	if age {
+		config = "completed_log_retention: 1ns"
+	}
+	writeTest(t, filepath.Join(f.dir, "config.yaml"), []byte(config), 0600)
 	stop = configDaemon(t, f)
 	waitUntil(t, func() bool {
 		for _, path := range paths {
@@ -348,4 +367,21 @@ func configCompletedLogRestart(t *testing.T) {
 		t.Fatal("log cleanup replay changed admission")
 	}
 	stop()
+}
+
+func configConcurrentClients(t *testing.T) {
+	f := newIntake(t)
+	lock, e := os.OpenFile(filepath.Join(f.dir, "daemon.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = lock.Close() }()
+	// Hold another client's shared configuration probe open across a real CLI
+	// invocation. Only the daemon's exclusive ownership can mean a live daemon.
+	if e = syscall.Flock(int(lock.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); e != nil {
+		t.Fatal(e)
+	}
+	f.call(t, "run", "submit", f.input)
+	f.call(t, "task", "enable", "concurrent")
+	f.noExecution(t)
 }

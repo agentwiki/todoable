@@ -24,13 +24,27 @@ func (s *Store) Daemon() (*Daemon, error) {
 	if e != nil {
 		return nil, e
 	}
-	if e = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); e != nil {
-		_ = lock.Close()
-		return nil, &domain.Fault{Code: 6, Kind: "daemon_running", Message: "a daemon owns this data directory"}
+	deadline := time.Now().Add(time.Second)
+	for {
+		e = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if e == nil {
+			break
+		}
+		if !errors.Is(e, syscall.EWOULDBLOCK) {
+			_ = lock.Close()
+			return nil, e
+		}
+		if !time.Now().Before(deadline) {
+			_ = lock.Close()
+			return nil, &domain.Fault{Code: 6, Kind: "daemon_running", Message: "a daemon owns this data directory"}
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-
-	if e = lock.Truncate(0); e == nil {
-		_, e = lock.WriteAt([]byte(s.ConfigHash()), 0)
+	// Overwrite the fixed-width hash before trimming stale bytes, so an
+	// existing complete record is never replaced by an empty publication.
+	_, e = lock.WriteAt([]byte(s.ConfigHash()), 0)
+	if e == nil {
+		e = lock.Truncate(64)
 	}
 	if e == nil {
 		e = lock.Sync()
