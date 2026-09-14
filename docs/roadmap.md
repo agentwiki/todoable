@@ -1,6 +1,6 @@
 # 남은 작업
 
-SC-01~20·22~23·26·32~37·40의 30개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소를 구현했으며 취소와 시간 예산 전체 계약은 해당 미구현 시나리오가 남아 있다.
+SC-01~20·22~23·26~27·32~37·40의 31개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소를 구현했으며 취소와 시간 예산 전체 계약은 해당 미구현 시나리오가 남아 있다.
 
 현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task enable ID`, `task disable ID`, `run submit FILE`, `run show RUN_ID --json`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 다른 명령과 schedule 외의 사람용 조회 출력은 미구현이다.
 
@@ -23,7 +23,7 @@ SC-01~20·22~23·26·32~37·40의 30개 시나리오 E2E를 구현했다. 접수
 | 부분 구현 | 연속 시간 소비와 읽기 검사 복구. 취소·영 시간 예산 확인 결합 미완 | SC-21·24, SC-38~39, SC-42 |
 | E2E 통과 | 출력 저장 상한·파이프 소비, 검사 timeout과 정지 미확인 검사 슬롯 유지 | SC-26 |
 | E2E 통과 | 실행 중 설정 해시 비교·재시작 실행/검사/접수/로그 상한·기존 예산 보존 | SC-40 |
-| 부분 구현 | 완료 stdout·stderr의 기간/총량 정리. 진행·차단·전체 보존 계약 E2E는 후속 | SC-27 |
+| E2E 통과 | 오래된 완료 stdout·stderr 기간/총량 정리, 진행·차단 로그와 실제 수동 감사·이력·중복 기록 보존 | SC-27 |
 | 미구현 | 저장 실패와 storage_paused 모드 | SC-25 |
 | 부분 구현 | JSON 오류와 접수·Run 조회. 나머지 CLI·데몬 경계 | SC-41 |
 | 미구현 | 실제 이슈 수정·자료 변환·기간 리포트 | SC-28~30 |
@@ -229,3 +229,18 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - fast 확인 132·실패 0, full 확인 142·실패 0·미구현 12로 구현 30개 시나리오의 모든 V를 확인했다. 로그 `/tmp/manual-config-runtime-integration-fast.log`, `/tmp/manual-config-runtime-integration-full.log`. 남은 TODO로 full 전체는 실패다. SC-27의 실제 감사 보존 전체 계약은 아직 미구현이며 이 통합만으로 완료로 바꾸지 않았다.
 - 별도 복사 `/tmp/todoable-manual-config-resume-mutation`에서 resume의 설정 가드만 제거한 뒤 전체 `go test -race -count=1 ./...`를 실행했다. SC-40/V-01이 설정 불일치 대신 실제 수동 해소 경계의 invalid_state까지 진행한 응답을 검출하여 종료 1로 실패했다(`/tmp/manual-config-runtime-resume-mutation.log`). 두 오류가 모두 코드 6이므로 오류 종류까지 대조한다.
 - 별도 리뷰 중인 testreport `9d77279` 및 취소 진행분은 이 제품 통합에 넣지 않았다. 취소 명령의 설정 가드는 해당 기능을 통합할 때 추가해야 한다. 실환경 L3는 이번 로컬 통합 검증에 포함하지 않았다.
+
+
+## SC-40 통합 독립 감사·오케스트레이터 재현 (2026-09-14)
+
+- `fd189df`를 현재 시나리오·코드 기준으로 독립 검토하여 SC-40 범위의 차단 결함 없이 통합 승인했다. 수동 재개 실제 다음 단계와 동일 Run 자원 예외를 유지하면서 설치 상한을 적용한 예약 SQL, resume 설정 검사와 오류 종류·감사·외부 실행 불변 검증을 확인했다. 과거 3차 리뷰의 실패 로그는 공개 잠금 제거 변형을 검출한 기록이며 정상 제품의 미해결 실패를 뜻하지 않는다.
+- 오케스트레이터가 `fd189df`에서 `scripts/verify.sh`를 직접 재실행하여 fast 확인 132, full 확인 142·실패 0·TODO 12를 확인했다. 로그 `/tmp/current-sc40-integrated-full.log`. 별도 복사 `/tmp/todoable-sc40-orchestrator-publication-IYyFwI`에 데몬 공개 잠금 제거 변형을 적용하고 전체 `go test -race -count=1 ./...`를 실행했다. 종료 1이며 두 local 공개 잠금 회귀가 실패하고 E2E 패키지는 통과했다. 로그 `/tmp/sc40-orchestrator-publication-current.log`.
+
+## SC-27 완료 로그 정리·실제 감사 보존 (2026-09-14)
+
+- SC-40에서 구현한 정리 동작에 실제 CLI/데몬 E2E를 연결했다. 기존 부분 검증 stash `4c289c60`은 삭제하지 않고 별도 작업트리에 복구했다. 제품 코드는 변경하지 않았다.
+- 완료 접수 하나를 실제 변경 단계의 시그널 종료로 차단한 뒤 공개 `resume ... --action confirm-success`로 해소한다. Step 식별자·행동·사유·manual 표시를 확인한 실제 감사가 있는 접수의 상세 로그를 정리하고, 원래 결과·감사 전체 행·최종 요약·Task 버전·접수 스냅샷·입력·중복 해시·호출/반복 예산·프로세스 증거와 산출물이 보존되는지 대조한다.
+- 총량 검증은 완료 로그 정확 640바이트를 유지한 뒤 새 완료 접수를 추가해 오래된 접수만 삭제되는지 확인한다. 기간 검증은 충분한 총량에서 오래된 완료 로그만 만료시키고 젊은 완료 로그를 보존한다. 두 흐름 모두 실제 진행·차단 로그의 바이트를 보존하며 삭제된 완료 입력 재전송이 같은 접수이고 외부 명령을 다시 실행하지 않는지 확인한다.
+- SC-27 대상 race E2E와 `scripts/verify.sh --fast` 확인 132·실패 0을 확인했다. 이번 범위에는 SC-25 저장 실패 모드 및 SC-41 전체 로그 조회 CLI 구현을 포함하지 않았고 해당 TODO를 유지한다. L3 실환경은 실행하지 않았다.
+- 기본 `scripts/verify.sh`는 fast 확인 132·실패 0, full 확인 145·실패 0·미구현 11로 SC-27을 포함한 구현 31개 시나리오의 모든 V를 확인했다. 로그 `/tmp/log-retention-fast.log`, `/tmp/log-retention-full.log`. 남은 TODO로 전체 full의 종료는 1이다.
+- 별도 복사 `/tmp/todoable-log-retention-audit-mutation-GqxdrW`에서 실제 정리 대상 접수의 수동 감사 행을 함께 삭제하는 변형을 전체 `go test -race -count=1 ./...`로 실행했다. SC-27/V-01·V-02 모두 `cleanup changed durable records`로 감사 소실을 검출했으며 실제 종료 1을 확인했다. 로그 `/tmp/log-retention-audit-mutation.log`. 원 작업트리의 제품 코드는 변형하지 않았다.
