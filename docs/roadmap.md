@@ -398,3 +398,13 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 기본 full에서 SC-36·42의 모든 V는 통과했다. 전체 집계는 확인 199·실패 10·미구현 2·건너뜀 1이다(`/tmp/audit-boundaries-full.log`). 네 fixture의 Go 빌드가 VCS status 128로 실패했으므로 전체 검증 성공으로 취급하지 않는다. 새 진단 보존 도구가 파일·행과 빌드 실패를 출력했다. 최종 전체 검증 전에 원인 조사와 재실행이 필요하다.
 - 별도 유효 작업트리에서 실제 제품 DSN의 foreign_keys만 off로 바꾸는 변형을 전체 `go test -race -count=1 ./...`로 실행했다. 기존 adapter 검증과 새 SC-42/V-02 실제 CLI 연결 단정이 모두 FK=0을 검출하여 종료 1이었다(267.695초, `/tmp/audit-fk-mutant-full.log`).
 - 자동 활성 leap 일정은 별도 재현에서 반복 탐색 중 조회 CLI의 database_busy로 실패했다(`/tmp/audit-leap-repro-automatic.log`, 18.212초). 수동 경계 보강으로 이를 해결했다고 주장하지 않는다. 날짜 탐색과 다른 Task/CLI 진행을 보강하는 별도 제품 수정이 진행 중이며 해당 회귀와 최종 full 통과 전 전체 완료가 아니다.
+
+
+## 희소 cron 탐색의 쓰기 잠금 독점 수정 (2026-09-14)
+
+- 실제 활성 8년 윤세기 일정에서 자동 발행 뒤 조회가 database_busy로 실패하는 문제를 재현했다. 기존 Next/Previous는 달력상 불가능한 날짜까지 분마다 순회했고, 일정 유지보수의 쓰기 트랜잭션 안에서 같은 탐색을 반복했다. 이제 불가능한 현지 날짜는 현재 UTC offset으로 날짜 경계까지 건너뛰되, 앞선 IANA 시간대 전환에서 멈추고 새 offset으로 다시 판단한다. 유효 날짜 내부의 분 탐색과 양방향 8년 포함 경계는 유지한다.
+- SC-36은 실제 활성 leap 일정의 2096→2104 자동 접수·정확한 리포트와 다른 Task의 접수·실행을 확인한다. 최초 단일 일정 회귀의 원형 변형은 구현자 전체 실행에서 생존(285.003초)하고 독립 실행에서는 database_busy로 실패(279.262초)했으므로 결정적인 부하 독립 검출이라고 주장하지 않는다. 두 로그 `/tmp/cron-calendar-mutant-no-skip-full.log`, `/tmp/todoable-review-cron-noskip-full.log`를 보존했다.
+- 이를 보강하여 8개 합법적 희소 일정을 활성화한 채 별도 Task의 8개 입력을 순차 접수한다. 매 CLI 성공 응답 이후 daemon scheduler만 쓰는 run_schedule 행이 1초 안에 나타나는지, 각 실제 산출물이 정확한지 확인한다. Run/검사 슬롯이나 프로세스 시작 시간을 접수 변화 관측으로 혼동하지 않는다. 조회가 반환된 뒤에도 1초 경계를 재확인한다.
+- 기존 DST·초 단위 역사 offset 검증에 Apia의 누락된 현지 날짜를 양방향으로 탐색하는 회귀를 추가했다. SC-19·36·37·42 대상 race 32.901초, 최종 관측 경계의 SC-36 race 5.959초 통과다. 독립 알고리즘 검토에서 날짜/zone 경계의 진전성과 의미가 승인되었으며, 관측 후 경과시간 확인 지적도 반영했다.
+- 정상 기본 full은 fast 확인 139·실패 0, E2E 확인 210·실패 0·TODO 2·skip 1, 42개 모두 실행이다(`/tmp/cron-observation-full.log`). 해당 전체 실행은 조회 후 시간 확인 한 줄 보강 직전이며 최종 한 줄은 위 targeted와 후속 최종 통합 전체 검증에서 확인한다. 이전 VCS status 128은 fixture build 80회와 두 후속 정상 full에서 재현되지 않았다. 근거 없이 buildvcs를 끄거나 원인을 잠금 경합으로 단정하지 않았다.
+- 보강한 동일 회귀에서 날짜 skip을 제거한 원형 알고리즘을 전체 `go test -race -count=1 ./...`로 실행했다. SC-36의 8개 활성 희소 일정 중 실제 probe 접수 database_busy를 검출해 종료 1이었다(278.126초, `/tmp/cron-observation-mutant-full.log`). 다른 제품/도구 실패는 없었다. 최종 관측 후 경계까지 포함한 오케스트레이터 전체 변형과 최종 main full/deep은 이어지는 통합 기록에서 확정한다.

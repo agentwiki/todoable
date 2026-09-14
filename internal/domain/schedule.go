@@ -144,6 +144,13 @@ func (r ScheduleRule) cronMatches(at time.Time) bool {
 	if t.Second() != 0 || t.Nanosecond() != 0 || !r.fields[0].matches(t.Minute()) || !r.fields[1].matches(t.Hour()) || !r.fields[3].matches(int(t.Month())) {
 		return false
 	}
+	return r.cronDateMatches(t)
+}
+
+func (r ScheduleRule) cronDateMatches(t time.Time) bool {
+	if !r.fields[3].matches(int(t.Month())) {
+		return false
+	}
 	day, week := r.fields[2].matches(t.Day()), r.fields[4].matches(int(t.Weekday()))
 	if r.fields[2].wildcard {
 		return week
@@ -176,6 +183,17 @@ func (r ScheduleRule) Next(after, anchor time.Time) (time.Time, bool) {
 	for cursor := after.UTC().Add(time.Nanosecond); !cursor.After(limit); {
 		local := cursor.In(r.location)
 		_, zoneEnd := local.ZoneBounds()
+		if !r.cronDateMatches(local) {
+			// Within one zone interval the UTC offset is fixed. Skip the
+			// impossible local date, but revisit any intervening transition:
+			// the transition may repeat or omit a local midnight or whole day.
+			_, offset := local.Zone()
+			cursor = time.Date(local.Year(), local.Month(), local.Day()+1, 0, 0, 0, 0, time.UTC).Add(-time.Duration(offset) * time.Second)
+			if !zoneEnd.IsZero() && !cursor.Before(zoneEnd) {
+				cursor = zoneEnd.UTC()
+			}
+			continue
+		}
 		candidate := localMinuteFloor(local).UTC()
 		if candidate.Before(cursor) {
 			candidate = candidate.Add(time.Minute)
@@ -217,6 +235,14 @@ func (r ScheduleRule) Previous(at, anchor time.Time) (time.Time, bool) {
 	for cursor := at.UTC().Add(-time.Nanosecond); !cursor.Before(limit); {
 		local := cursor.In(r.location)
 		zoneStart, _ := local.ZoneBounds()
+		if !r.cronDateMatches(local) {
+			_, offset := local.Zone()
+			cursor = time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC).Add(-time.Duration(offset)*time.Second - time.Nanosecond)
+			if !zoneStart.IsZero() && cursor.Before(zoneStart) {
+				cursor = zoneStart.UTC().Add(-time.Nanosecond)
+			}
+			continue
+		}
 		candidate := localMinuteFloor(local).UTC()
 		if !zoneStart.IsZero() && candidate.Before(zoneStart) {
 			cursor = zoneStart.UTC().Add(-time.Nanosecond)

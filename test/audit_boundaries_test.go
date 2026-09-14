@@ -1,12 +1,14 @@
 package test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func installSignalObserver(t *testing.T, f runtimeFixture) {
@@ -59,10 +61,19 @@ func cronDateBoundaries(t *testing.T) {
 	// 2100 is not a leap year. Exactly eight years must remain searchable,
 	// both when accepting the definition and reconstructing the prior window.
 	f.register(t, "century-leap", cronSchedule("0 0 29 2 *", "UTC"))
-	f.at(t, "2104-02-29T00:00:00Z")
-	admitted := f.call(t, "schedule", "submit", "century-leap", "--at", "2104-02-29T00:00:00Z")
+	f.call(t, "schedule", "enable", "century-leap")
 	f.daemon(t)
-	f.assertReport(t, admitted["run_id"].(string), "2096-02-29T00:00:00Z", "2104-02-29T00:00:00Z", []string{"1", "2"})
+	f.observed(t, "century-leap", "2096-02-29T00:00:00Z")
+	f.at(t, "2104-02-29T00:00:00Z")
+	run := f.runAt(t, "century-leap", "2104-02-29T00:00:00Z")
+	f.assertReport(t, run, "2096-02-29T00:00:00Z", "2104-02-29T00:00:00Z", []string{"1", "2"})
+	// A sparse active schedule must not monopolize the write transaction on
+	// every poll. Unrelated registration, admission, observation and execution
+	// must still progress while the leap schedule remains active.
+	f.register(t, "unrelated", cronSchedule("0 0 * * *", "UTC"))
+	other := f.call(t, "schedule", "submit", "unrelated", "--at", "2104-02-28T00:00:00Z")
+	f.assertReport(t, other["run_id"].(string), "2104-02-27T00:00:00Z", "2104-02-28T00:00:00Z", []string{})
+	f.call(t, "schedule", "disable", "century-leap")
 	for _, tc := range []struct{ id, cron, at, previous, rejected string }{
 		{"weekday-only", "0 0 * * 1", "2026-09-07T00:00:00Z", "2026-08-31T00:00:00Z", "2026-09-08T00:00:00Z"},
 		{"monthday-only", "0 0 1 * *", "2026-09-01T00:00:00Z", "2026-08-01T00:00:00Z", "2026-09-02T00:00:00Z"},
@@ -75,6 +86,52 @@ func cronDateBoundaries(t *testing.T) {
 		if f.count(t, "submissions") != before {
 			t.Fatal("wildcard rejection created a submission")
 		}
+	}
+	t.Run("sparse-schedule-admission-observation", sparseScheduleObservation)
+}
+
+func sparseScheduleObservation(t *testing.T) {
+	f := newSchedule(t, "2096-02-29T00:00:00Z")
+	f.events(t)
+	// Several legal sparse schedules keep the maintenance loop scanning its
+	// full range. Check repeated daemon observations, not one lucky lock gap.
+	for i := range 8 {
+		id := fmt.Sprintf("sparse-%d", i)
+		f.register(t, id, cronSchedule("0 0 29 2 *", "UTC"))
+		f.call(t, "schedule", "enable", id)
+	}
+	f.register(t, "probe", cronSchedule("0 0 * * *", "UTC"))
+	f.daemon(t)
+	f.observed(t, "sparse-7", "2096-02-29T00:00:00Z")
+	db := f.db(t)
+	for day := 20; day < 28; day++ {
+		at := fmt.Sprintf("2096-02-%02dT00:00:00Z", day)
+		before := fmt.Sprintf("2096-02-%02dT00:00:00Z", day-1)
+		receipt := f.call(t, "schedule", "submit", "probe", "--at", at)
+		acknowledged := time.Now()
+		observed := false
+		for time.Since(acknowledged) < time.Second {
+			var n int
+			// Only the daemon's scheduler populates run_schedule. Its row
+			// proves the input change was seen, independent of Run/check slots
+			// and process startup/completion latency.
+			if err := db.QueryRow("SELECT count(*) FROM run_schedule WHERE run_id=?", receipt["run_id"]).Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			if n == 1 {
+				observed = time.Since(acknowledged) <= time.Second
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if !observed {
+			t.Fatalf("daemon did not observe acknowledged input %s within one second during sparse schedule scans", at)
+		}
+		f.assertReport(t, receipt["run_id"].(string), before, at, []string{})
+	}
+	var sparse int
+	if err := db.QueryRow("SELECT count(*) FROM submissions WHERE task_id LIKE 'sparse-%'").Scan(&sparse); err != nil || sparse != 0 {
+		t.Fatalf("sparse schedules emitted an activation-time occurrence: count=%d err=%v", sparse, err)
 	}
 }
 

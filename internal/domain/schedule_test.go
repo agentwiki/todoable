@@ -201,3 +201,18 @@ func TestScheduleHistoricalSecondOffset(t *testing.T) {
 		t.Fatalf("previous grid %+v %v", window, e)
 	}
 }
+
+func TestScheduleSkipsMissingCalendarDay(t *testing.T) {
+	r := scheduleRule(t, "", "0 0 30 12 *", "Pacific/Apia")
+	// Apia skipped December 30, 2011 when changing from UTC-10 to UTC+14.
+	// Search in both directions across that transition, without inventing
+	// an occurrence at the skipped local midnight.
+	next, ok := r.Next(scheduleTime("2011-12-29T10:00:00Z"), time.Time{})
+	if !ok || next.Format(time.RFC3339) != "2012-12-29T10:00:00Z" {
+		t.Fatalf("next across omitted day: %s %v", next, ok)
+	}
+	previous, ok := r.Previous(scheduleTime("2012-12-29T10:00:00Z"), time.Time{})
+	if !ok || previous.Format(time.RFC3339) != "2010-12-30T10:00:00Z" {
+		t.Fatalf("previous across omitted day: %s %v", previous, ok)
+	}
+}
