@@ -15,3 +15,15 @@ func ValidateCancel(r CancelRequest) error {
 	}
 	return nil
 }
+
+type TaskCancelRequest struct {
+	TaskID string
+	Reason string
+}
+
+func ValidateTaskCancel(request TaskCancelRequest) error {
+	if !ValidID(request.TaskID) || strings.TrimSpace(request.Reason) == "" {
+		return Invalid("Task cancellation requires an ID and nonempty reason")
+	}
+	return nil
+}

@@ -18,3 +18,10 @@ func Cancel(store ports.RecoveryStore, request domain.CancelRequest) (map[string
 	}
 	return store.Cancel(request)
 }
+
+func CancelTask(store ports.TaskCancellationStore, request domain.TaskCancelRequest) (map[string]any, error) {
+	if err := domain.ValidateTaskCancel(request); err != nil {
+		return nil, err
+	}
+	return store.CancelTask(request)
+}

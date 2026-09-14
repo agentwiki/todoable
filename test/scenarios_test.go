@@ -332,17 +332,6 @@ func TestScenario_SC_30(t *testing.T) {
 	})
 }
 
-// TestScenario_SC_31: Task 등록·갱신·활성 상태
-func TestScenario_SC_31(t *testing.T) {
-	todo(t, "SC-31")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-31")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-31")
-	})
-}
-
 // TestScenario_SC_32: JSON 정규화와 중복 메타데이터
 func TestScenario_SC_32(t *testing.T) {
 	f := newIntake(t)
@@ -412,17 +401,6 @@ func TestScenario_SC_39(t *testing.T) {
 		t.Run("acknowledge", func(t *testing.T) { cancelledUnknownResolution(t, false) })
 	})
 	verify(t, "V-02", unconfirmedCancellation)
-}
-
-// TestScenario_SC_41: CLI 응답·관측·데몬 경계
-func TestScenario_SC_41(t *testing.T) {
-	todo(t, "SC-41")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-41")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-41")
-	})
 }
 
 // TestScenario_SC_42: 종료 신호와 일관된 저장 복구

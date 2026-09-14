@@ -108,3 +108,25 @@ func cancelCommand(dir string, args []string) int {
 	}
 	return 0
 }
+
+func taskCancelCommand(dir string, args []string) int {
+	if len(args) != 5 || args[3] != "--reason" {
+		return local.Fail(domain.Invalid("task cancel ID --reason TEXT"))
+	}
+	store, err := local.Open(dir)
+	if err != nil {
+		return local.Fail(err)
+	}
+	defer store.Close()
+	if err = store.CheckCLIConfig(); err != nil {
+		return local.Fail(err)
+	}
+	value, err := usecases.CancelTask(store, domain.TaskCancelRequest{TaskID: args[2], Reason: args[4]})
+	if err != nil {
+		return local.Fail(err)
+	}
+	if err = local.Write(value); err != nil {
+		return local.Fail(err)
+	}
+	return 0
+}

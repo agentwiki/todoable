@@ -138,6 +138,11 @@ func storageAdmissionFailures(t *testing.T) {
 				storageDaemon(t, f)
 			}
 			awaitPaused(t, f, a["run_id"].(string))
+			if mode == "log-create" {
+				waitUntil(t, func() bool {
+					return f.call(t, "status", "--json")["daemon"].(map[string]any)["state"] == "storage_paused"
+				})
+			}
 			b := submitCore(t, f, "runtime", "second", "other-resource", map[string]any{"label": "second"})
 			time.Sleep(1150 * time.Millisecond)
 			if events := orderEvents(t, f); len(events) != 0 {
@@ -164,6 +169,7 @@ func storageAdmissionFailures(t *testing.T) {
 			}
 		})
 	}
+	t.Run("heartbeat", storageHeartbeatFailure)
 }
 func storageLostResults(t *testing.T) {
 	for _, mode := range []string{"db-result", "log-sync-result"} {
@@ -447,5 +453,52 @@ func storageUntrackedResult(t *testing.T) {
 	}
 	if n := configCount(t, f, "SELECT count(*) FROM check_slots"); n != 1 {
 		t.Fatalf("cancellation released live untracked check: %d", n)
+	}
+}
+
+func storageHeartbeatFailure(t *testing.T) {
+	for _, startup := range []bool{false, true} {
+		name := "periodic"
+		if startup {
+			name = "startup"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := orderFixture(t, 0, "0s", "0s")
+			delete(f.task, "start")
+			updateOrderTask(t, f)
+			gate := filepath.Join(f.root, "release-heartbeat")
+			a := submitCore(t, f, "runtime", "held", "held", map[string]any{"label": "held", "before_gate": gate})
+			db := f.database(t)
+			inject := func() {
+				storageSQL(t, db, "CREATE TRIGGER reject_heartbeat BEFORE INSERT ON daemon_observation BEGIN SELECT RAISE(ABORT,'heartbeat disk failure'); END")
+			}
+			if startup {
+				inject()
+			}
+			storageDaemon(t, f)
+			if !startup {
+				waitExternal(t, f, "held", "before", 1)
+				inject()
+			}
+			awaitPaused(t, f, a["run_id"].(string))
+			before := f.call(t, "status", "--json")["daemon"].(map[string]any)
+			b := submitCore(t, f, "runtime", "pending", "pending", map[string]any{"label": "pending"})
+			events := len(orderEvents(t, f))
+			// Multiple generic DB/log probes succeed, but the heartbeat remains broken.
+			// Admission must stay closed until that write recovers too.
+			time.Sleep(2200 * time.Millisecond)
+			if n := len(orderEvents(t, f)); n != events {
+				t.Fatalf("heartbeat failure admitted external work %d -> %d", events, n)
+			}
+			after := f.call(t, "status", "--json")["daemon"].(map[string]any)
+			if after["observed_at"] != before["observed_at"] || after["stale"] != true {
+				t.Fatalf("failed heartbeat appeared current: before=%v after=%v", before, after)
+			}
+			storageSQL(t, db, "DROP TRIGGER reject_heartbeat")
+			if got := f.await(t, b["run_id"].(string)); got["state"] != "succeeded" {
+				t.Fatalf("heartbeat recovery did not resume existing daemon: %v", got)
+			}
+			waitUntil(t, func() bool { return f.call(t, "status", "--json")["daemon"].(map[string]any)["state"] == "running" })
+		})
 	}
 }

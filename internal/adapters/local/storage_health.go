@@ -148,7 +148,12 @@ func (s *Store) probeStorage() error {
 	name := f.Name()
 	_, writeErr := f.Write([]byte("storage probe\n"))
 	err = errors.Join(writeErr, s.syncLogFile(f), f.Close())
-	return errors.Join(err, os.Remove(name))
+	if err = errors.Join(err, os.Remove(name)); err != nil {
+		return err
+	}
+	// Observation writes are part of storage health: a failing heartbeat must
+	// not reopen admission merely because the generic DB probe succeeds.
+	return s.RecordDaemonState("running")
 }
 
 func (s *Store) syncLogFile(f *os.File) error {
