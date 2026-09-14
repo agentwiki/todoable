@@ -127,3 +127,10 @@ YAML alias와 설치 `config.yaml`은 현재 지원하지 않고 명시적으로
 - 별도 E2E는 결과 없는 시작·종료검사의 이전 실제 프로세스를 정지한 뒤에만 새 검사 의도를 예약하는지, 완료 결과와 이미 기록된 차단은 재시작만으로 재실행·해소되지 않는지 확인한다. SC-22의 수동 해소 요청과 SC-38의 연속 시간·재개·취소 계약은 아직 검증하지 않았으므로 해당 TODO는 그대로 유지한다.
 - `scripts/verify.sh --fast` 통과(확인 122). 최종 `scripts/verify.sh`는 확인 108·실패 0·미구현 16이며 26개 구현 시나리오의 모든 V가 통과했다. 나머지 16개 `SCENARIO_TODO`로 full 전체는 실패한다. 로그는 `/tmp/recovery-fast.log`, `/tmp/recovery-full-final.log`에 남겼다. L3 실환경 검증은 이번 묶음에서 실행하지 않았다.
 - 정지 확인된 변경 intent를 같은 단계로 자동 재실행하는 변형을 별도 복사 `/tmp/todoable-recovery-replay-kmawbi1j`에서 전체 `go test -race -count=1 ./...`로 실행했다. SC-20/V-01의 세 강제 종료 경계 모두 실패했고 프로세스 종료 뒤 복구에서는 사용 호출 2·잘못된 succeeded가 검출되었다. `/tmp/recovery-replay-mutation.log`에 실제 종료 1을 기록했다. 원 트리는 변형하지 않았다.
+
+## 실행 의도 복구 독립 리뷰 보강 (2026-09-14)
+
+- 독립 리뷰가 no-PID 변경 intent를 정지 확인된 결과로 바꾸어 Run 슬롯을 반환하는 변형이 전체 race 테스트를 통과하는 공백을 재현했다. 제품 수정 없이 SC-20/V-02를 보강해 호출 1회·충돌 자원·정지 미확인 Run 슬롯과 PID/그룹/부팅/시작 식별값 부재 및 Step의 process_unknown 기록을 직접 확인한다.
+- 같은 자원 후속 입력이 대기하는 동안 독립 키 2개를 제출해 미확인 슬롯과 실제 실행 구간의 합이 2를 넘지 않는지 확인한다. 실제 실행이 끝나면 다음 독립 키가 진행하고 미확인 자원·슬롯은 계속 남는지 외부 산출물과 함께 대조한다.
+- `scripts/verify.sh --fast` 확인 122 통과. 기본 full은 확인 108·실패 0·TODO 16이며 기존 26개 구현 시나리오의 모든 V 통과를 유지한다. 로그: `/tmp/recovery-reviewfix-fast.log`, `/tmp/recovery-reviewfix-full.log`.
+- 동일 슬롯 반환 변형을 `/tmp/todoable-recovery-nopid-fix-hybbmhjr` 별도 복사에서 전체 `go test -race -count=1 ./...`로 재현했다. SC-20/V-02/saved-false가 held=0·result=interrupted를 검출하여 종료 1로 실패한다. 로그 `/tmp/recovery-reviewfix-mutation.log`. 원 트리에 변형을 적용하지 않았다.
