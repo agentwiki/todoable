@@ -1,6 +1,6 @@
 # 남은 작업
 
-SC-01~27·29·31~42의 40개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소, 연속 Run 시간 예산과 읽기 검사 복구를 구현했다.
+SC-01~42의 42개 시나리오 E2E를 구현하여 통합했다. 통합된 main의 최종 full/deep 검증은 진행 중이며, 이 구현 개수만으로 전체 완료를 뜻하지 않는다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소, 연속 Run 시간 예산과 읽기 검사 복구를 구현했다.
 
 현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task show ID [--version N] [--json]`, `task enable ID`, `task disable ID`, `task cancel ID --reason TEXT`, `run submit FILE`, `run show RUN_ID [--json]`, `status [--task ID] [--json]`, `logs RUN_ID [--step STEP_ID] [--follow]`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `submission cancel ID --reason TEXT [--acknowledge-effects] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 조회는 기본 사람이 읽는 형식이며 `--json`으로 JSON 객체를 받는다. 로그 조회는 원본 바이트를 출력하며 `--follow`는 이후 Step의 출력까지 따라간다.
 
@@ -27,7 +27,7 @@ SC-01~27·29·31~42의 40개 시나리오 E2E를 구현했다. 접수 검증은 
 | E2E 통과 | 저장 실패 admission 중단·1초 점검 복구·미저장 변경 결과 차단 | SC-25 |
 | E2E 통과 | 전체 CLI·사람/JSON 조회·로그 follow·기본경로·코드0~6·데몬 부재/오래된 관측 | SC-41 |
 | L3 E2E 통과 | 실제 PNG 병렬 WebP 변환·독립 픽셀 대조·실패 격리·재전송 보존 | SC-29 |
-| 미구현 | 실제 이슈 수정·기간 리포트 | SC-28·30 |
+| 개별 L3 E2E 통과·최종 통합 검증 대기 | 실제 Forgejo/Codex 이슈 수정·SeaweedFS S3 기간 리포트 게시와 불명 효과 해소 | SC-28·30 |
 
 YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이 제한과 설치 cap을 적용한다. 신규 접수는 선택한 현재·과거 Task 버전을 현 cap으로 검증하고, 기존 접수의 재전송은 같은 접수로 돌려준다. 실행 중 데몬과 CLI의 설정 해시가 다르면 조회만 허용하고 변경 명령은 재시작을 요구한다. 재시작한 데몬은 실행·검사·로그 관리의 현 상한을 사용하며 기존 접수의 스냅샷·예산은 유지한다. 일정 정의·활성화·비활성화·기간 수동 접수와 Task 전체 취소·과거 버전 조회를 구현했다. 접수 환경 스냅샷을 실제 실행에 전달하는 계약은 SC-34에서 확인했다.
 
@@ -408,3 +408,19 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 기존 DST·초 단위 역사 offset 검증에 Apia의 누락된 현지 날짜를 양방향으로 탐색하는 회귀를 추가했다. SC-19·36·37·42 대상 race 32.901초, 최종 관측 경계의 SC-36 race 5.959초 통과다. 독립 알고리즘 검토에서 날짜/zone 경계의 진전성과 의미가 승인되었으며, 관측 후 경과시간 확인 지적도 반영했다.
 - 정상 기본 full은 fast 확인 139·실패 0, E2E 확인 210·실패 0·TODO 2·skip 1, 42개 모두 실행이다(`/tmp/cron-observation-full.log`). 해당 전체 실행은 조회 후 시간 확인 한 줄 보강 직전이며 최종 한 줄은 위 targeted와 후속 최종 통합 전체 검증에서 확인한다. 이전 VCS status 128은 fixture build 80회와 두 후속 정상 full에서 재현되지 않았다. 근거 없이 buildvcs를 끄거나 원인을 잠금 경합으로 단정하지 않았다.
 - 보강한 동일 회귀에서 날짜 skip을 제거한 원형 알고리즘을 전체 `go test -race -count=1 ./...`로 실행했다. SC-36의 8개 활성 희소 일정 중 실제 probe 접수 database_busy를 검출해 종료 1이었다(278.126초, `/tmp/cron-observation-mutant-full.log`). 다른 제품/도구 실패는 없었다. 최종 관측 후 경계까지 포함한 오케스트레이터 전체 변형과 최종 main full/deep은 이어지는 통합 기록에서 확정한다.
+## SC-28·30 실제 이슈 수정과 별도 S3 게시
+
+- 보존된 중단 stash의 SC-28·30 실행기를 새 작업트리에 복원했다. SC-28은 localhost Forgejo 16.0.4의 실제 opened/reopened webhook을 받고 인증된 Codex CLI가 별도 임시 Git 저장소를 수정한다. 엔진 밖에 고정한 Python 종료검사, 코드19 정상 종료, 호출 예산 소진, 모델 수정 후 데몬 강제 종료·재시작에서 실제 패치·Step·로그·예산·충돌 자원 보존을 확인한다. 운영 저장소나 사람에게 메시지를 게시하지 않는다.
+- SC-30은 고정한 실제 40개 커밋 이력을 SQLite SQL로 집계하고 localhost SeaweedFS 4.17 S3에 게시한다. 두 연속 기간의 경계에 있는 실제 커밋과 별도 Go 필터를 비교한다. 게시 직후 내부 결과 저장 전 중단·복구, 목적지 효과 키 조회에 의한 해소, 남은 프로세스 정지 확인과 명시적 효과 인정에 의한 취소, 독립 입력 키의 동일 충돌 자원 대기를 실제 게시 결과로 검증한다.
+- 중단 상태에서 남았던 S3 준비 오류를 수정했다. 버킷 생성과 HEAD만으로는 SeaweedFS의 볼륨 warmup을 확인하지 못하므로 실제 두 객체 PUT과 GET이 끝난 뒤 제품 실행을 시작한다. 게시 래퍼는 목적지 HEAD의 404에만 PUT하며 다른 조회 실패를 미게시로 오인하지 않는다. 정기 기간은 enable 명령 전후의 실제 시각과 1초 길이를 별도로 검사한다. 외부 실행기·자료 출처·도구 요구사항은 test/testdata/issues/README.md와 test/testdata/report/README.md에 기록했다.
+- SC-28 targeted deep race는 183.31초, SC-30 최종 targeted deep race는 49.69초로 각 V-01·V-02가 실제 통과했다. 기본 full은 fast 확인 134·실패 0, E2E 확인 198·실패 0·미구현 3·건너뜀 2다. 이 브랜치의 미구현 SC-29·31·41과 full에서 실행하지 않은 L3 때문에 전체 종료 1을 유지한다. 로그는 /tmp/todoable-sc28-sc30-targeted.log(SC-28 성공 및 SC-30 수정 전 실패), /tmp/todoable-sc30-conflict.log(SC-30 최종 성공), /tmp/todoable-sc28-sc30-full.log다.
+- 최종 소스의 별도 복사에서 실제 Codex를 모두 review-only로 바꾸고 게시 래퍼의 기존 목적지 조회 결과를 무시하는 두 독립 변형을 결합해 `E2E_DEEP=1 go test -race -count=1 ./...` 전체 패키지를 실행했다. 311.289초 후 SC-28/V-01·V-02는 실제 수정 부재의 failed:max_calls를, SC-30/V-01은 실제 성공한 PUT 2회를 검출하여 종료 1이다. 패치는 /tmp/todoable-sc28-sc30-no-effects.patch, 로그는 /tmp/todoable-sc28-sc30-no-effects-full.log다. 최종 `scripts/verify.sh --deep`은 fast 확인 134·실패 0, E2E 확인 204·실패 0·미구현 3·건너뜀 0(42개 모두 실행)이다. SC-28·30을 포함한 구현 시나리오는 실제 통과하며 이 브랜치의 미구현 SC-29·31·41 때문에 전체 종료 1이다. 원본 로그는 /tmp/todoable-sc28-sc30-deep.log다. 독립 리뷰와 오케스트레이터의 핵심 재현은 아직 남아 있다.
+
+
+## 전체 42개 시나리오 구현 통합 (2026-09-14)
+
+- 승인된 실제 이슈 수정·S3 게시 `995564d`를 CLI·변환·저장 관측·최종 감사·cron 수정에 결합했다. 제품 코드의 추가 변경은 없으며 SC-28·30의 실제 E2E를 추가하고 해당 TODO를 제거했다. 양쪽 roadmap 기록과 fixture·출처 문서를 보존했다. 사용자 시나리오 문서 편집은 그대로 두고 커밋에 포함하지 않는다.
+- 실제 S3 기존 목적지 조회를 무시하는 변형은 독립 전체 deep race에서 게시 성공 PUT 두 회로 SC-30/V-01만 실패했다(504.283초, `/tmp/todoable-real-review-mutation.log`). 오케스트레이터도 같은 실제 중복 게시를 전체 deep race에서 단독 실패로 재현했다(461.699초, `/tmp/todoable-real-orchestrator-mutation.log`). SC-28·30의 독립 리뷰 승인이 완료되었고 기존 원본 검증/라이선스/도구 기록을 유지한다.
+- 현재 42개 구현의 최종 기본 검증과 `--deep`은 main에서 오케스트레이터가 직접 실행할 예정이다. 기본 모드의 L3 실행 조건과 deep의 실제 Forgejo/Codex·ImageMagick/Pillow·SeaweedFS 요구사항을 바꾸지 않았다. 실행 전까지 42개 모두 통과했다고 주장하지 않는다.
+- 최종 관측 후 1초 경계까지 포함한 메인의 날짜 skip 제거 변형도 전체 race에서 종료 1이었다(258.358초, `/tmp/todoable-main-cron-noskip-final-full.log`). 유일 실패는 SC-36/V-01 자동 8년 리포트 조회의 database_busy이며, 강화한 sparse 행 관측 단정에 도달하기 전 실패임을 구분한다.
+- 합본 `scripts/verify.sh --fast`는 도구 자기검증·게이트·lint·빠른 등급 확인 139·실패 0으로 통과했다(`/tmp/all42-integration-fast.log`). 이는 최종 제품 full/deep을 대신하지 않는다.

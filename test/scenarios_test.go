@@ -299,28 +299,6 @@ func TestScenario_SC_26(t *testing.T) {
 	verify(t, "V-02", func(t *testing.T) { unknownCheckSlots(t) })
 }
 
-// TestScenario_SC_28: 이슈 수정 실사용
-func TestScenario_SC_28(t *testing.T) {
-	todo(t, "SC-28")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-28")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-28")
-	})
-}
-
-// TestScenario_SC_30: 기간별 리포트와 외부 게시 실사용
-func TestScenario_SC_30(t *testing.T) {
-	todo(t, "SC-30")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-30")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-30")
-	})
-}
-
 // TestScenario_SC_32: JSON 정규화와 중복 메타데이터
 func TestScenario_SC_32(t *testing.T) {
 	f := newIntake(t)
