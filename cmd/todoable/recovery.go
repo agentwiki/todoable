@@ -51,6 +51,9 @@ func resumeCommand(dir string, args []string) int {
 		return local.Fail(err)
 	}
 	defer store.Close()
+	if err = store.CheckCLIConfig(); err != nil {
+		return local.Fail(err)
+	}
 	result, err := usecases.Resume(store, r)
 	if err != nil {
 		return local.Fail(err)

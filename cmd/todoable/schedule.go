@@ -35,6 +35,11 @@ func scheduleCommand(dir string, args []string) int {
 		return local.Fail(err)
 	}
 	defer func() { _ = store.Close() }()
+	if command != "show" {
+		if err = store.CheckCLIConfig(); err != nil {
+			return local.Fail(err)
+		}
+	}
 	switch command {
 	case "enable", "disable":
 		err = usecases.SetSchedule(store, args[2], command == "enable")

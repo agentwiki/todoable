@@ -1,10 +1,15 @@
 package local
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"github.com/agentwiki/todoable/internal/domain"
+	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -71,6 +76,49 @@ func (s *Store) ReadSubmission(path string) ([]byte, error) {
 	return ReadFileLimit(path, s.config.MaxInputBytes+16384)
 }
 
+func (s *Store) ConfigHash() string {
+	raw, _ := json.Marshal(s.config)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// CheckCLIConfig compares against the configuration held by the live lock owner.
+// Stale lock contents have no authority after the daemon exits.
+func (s *Store) CheckCLIConfig() error {
+	publication, e := s.configPublication(syscall.LOCK_SH)
+	if e != nil {
+		return e
+	}
+	defer func() { _ = publication.Close() }()
+	lock, e := os.OpenFile(filepath.Join(s.dir, "daemon.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if e != nil {
+		return e
+	}
+	defer func() { _ = lock.Close() }()
+	deadline := time.Now().Add(time.Second)
+	for {
+		e = syscall.Flock(int(lock.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+		if e == nil {
+			return nil
+		}
+		if !errors.Is(e, syscall.EWOULDBLOCK) {
+			return e
+		}
+		raw := make([]byte, 65)
+		n, readErr := lock.ReadAt(raw, 0)
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return readErr
+		}
+		if string(raw[:n]) == s.ConfigHash() {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			return &domain.Fault{Code: 6, Kind: "config_mismatch", Message: "configuration differs from running daemon; restart the daemon"}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+func (s *Store) WorkerCount() int { return s.config.MaxRunningRuns + s.config.MaxCheckProcesses }
 func validateTaskCaps(task domain.Task, config Config) error {
 	if task.Repeat > config.MaxRepeat || task.Finish.MaxCalls > config.MaxCallsPerRun {
 		return domain.Invalid("selected Task version exceeds current installation caps")
@@ -87,4 +135,29 @@ func validateTaskCaps(task domain.Task, config Config) error {
 		}
 	}
 	return nil
+}
+
+// configPublication serializes ownership changes and hash publication with CLI
+// observations. It is separate from the daemon lifetime lock and never renamed.
+func (s *Store) configPublication(mode int) (*os.File, error) {
+	lock, e := os.OpenFile(filepath.Join(s.dir, "daemon-publication.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if e != nil {
+		return nil, e
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		e = syscall.Flock(int(lock.Fd()), mode|syscall.LOCK_NB)
+		if e == nil {
+			return lock, nil
+		}
+		if !errors.Is(e, syscall.EWOULDBLOCK) {
+			_ = lock.Close()
+			return nil, e
+		}
+		if !time.Now().Before(deadline) {
+			_ = lock.Close()
+			return nil, &domain.Fault{Code: 5, Kind: "config_busy", Message: "daemon configuration publication is busy; retry"}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
