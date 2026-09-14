@@ -217,9 +217,15 @@ func (s *Store) Complete(x domain.Execution, o domain.Outcome, next string) erro
 	if _, e = tx.Exec("UPDATE runs SET state=? WHERE id=?", state, x.RunID); e != nil {
 		return e
 	}
-	if strings.HasPrefix(next, "blocked:") && next != "blocked:process_unknown" {
+	if strings.HasPrefix(next, "blocked:") && o.Kind != "process_unknown" {
 		if _, e = tx.Exec("UPDATE run_schedule SET slot_held=0 WHERE run_id=?", x.RunID); e != nil {
 			return e
+		}
+		// A failed recheck never entered the changing execution phase.
+		if x.Stage == "start_check" {
+			if _, e = tx.Exec("DELETE FROM resources WHERE run_id=?", x.RunID); e != nil {
+				return e
+			}
 		}
 	}
 	if terminal {

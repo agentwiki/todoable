@@ -150,13 +150,8 @@ func TestScenario_SC_08(t *testing.T) {
 
 // TestScenario_SC_09: 무관한 충돌 키 여러 개
 func TestScenario_SC_09(t *testing.T) {
-	todo(t, "SC-09")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-09")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-09")
-	})
+	verify(t, "V-01", func(t *testing.T) { independentSlots(t, false) })
+	verify(t, "V-02", func(t *testing.T) { independentSlots(t, true) })
 }
 
 // TestScenario_SC_10: Run 반복과 다른 입력의 자원 경쟁
@@ -251,13 +246,8 @@ func TestScenario_SC_15(t *testing.T) {
 
 // TestScenario_SC_20: 슬롯 예약·명령 결과 기록 사이 강제 종료
 func TestScenario_SC_20(t *testing.T) {
-	todo(t, "SC-20")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-20")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-20")
-	})
+	verify(t, "V-01", func(t *testing.T) { crashAgentBoundaries(t) })
+	verify(t, "V-02", func(t *testing.T) { intentAndSavedResult(t) })
 }
 
 // TestScenario_SC_21: after 외부 효과 직후 결과 저장 전 종료
@@ -433,13 +423,8 @@ func TestScenario_SC_34(t *testing.T) {
 
 // TestScenario_SC_35: 시작 재확인과 단계별 실패
 func TestScenario_SC_35(t *testing.T) {
-	todo(t, "SC-35")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-35")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-35")
-	})
+	verify(t, "V-01", func(t *testing.T) { recheckFailures(t) })
+	verify(t, "V-02", func(t *testing.T) { changingFailures(t) })
 }
 
 // TestScenario_SC_38: 시간 예산과 읽기 전용 검사 복구

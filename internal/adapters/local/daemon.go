@@ -27,14 +27,13 @@ func (s *Store) Daemon() (*Daemon, error) {
 		_ = lock.Close()
 		return nil, &domain.Fault{Code: 6, Kind: "daemon_running", Message: "a daemon owns this data directory"}
 	}
-	// An unfinished intent cannot be treated as an unissued command on restart.
-	_, e = s.db.Exec(`UPDATE runs SET state='blocked' WHERE id IN(SELECT run_id FROM steps WHERE result IS NULL);
- UPDATE runtime SET stage='blocked:process_unknown' WHERE run_id IN(SELECT run_id FROM steps WHERE result IS NULL);`)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	e = s.recoverIntents(ctx)
 	if e != nil {
+		stop()
 		_ = lock.Close()
 		return nil, e
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	return &Daemon{lock: lock, context: ctx, stop: stop}, nil
 }
 func (d *Daemon) Context() context.Context { return d.context }
