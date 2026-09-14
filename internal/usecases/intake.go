@@ -7,7 +7,7 @@ import (
 
 func Register(store ports.IntakeStore, task domain.Task) (int, error) { return store.Register(task) }
 func Submit(store ports.IntakeStore, raw []byte) (domain.Result, error) {
-	in, err := domain.ParseSubmission(raw)
+	in, err := domain.ParseSubmissionLimit(raw, store.InputLimit())
 	if err != nil {
 		return domain.Result{}, err
 	}

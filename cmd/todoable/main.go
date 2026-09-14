@@ -59,10 +59,10 @@ func run(args []string) int {
 		value = map[string]any{"protocol_version": 1, "task_id": args[2], "enabled": command == "task enable"}
 	case "task register", "task update":
 		var raw []byte
-		raw, err = local.ReadFile(args[2])
+		raw, err = store.ReadManifest(args[2])
 		if err == nil {
 			var task domain.Task
-			task, err = local.ParseTask(raw)
+			task, err = store.ParseTask(raw)
 			if err == nil {
 				var version int
 				if command == "task update" {
@@ -75,7 +75,7 @@ func run(args []string) int {
 		}
 	case "run submit":
 		var raw []byte
-		raw, err = local.ReadFile(args[2])
+		raw, err = store.ReadSubmission(args[2])
 		if err == nil {
 			value, err = usecases.Submit(store, raw)
 		}
