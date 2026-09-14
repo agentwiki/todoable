@@ -280,6 +280,7 @@ func TestScenario_SC_24(t *testing.T) {
 	verify(t, "V-02", func(t *testing.T) {
 		t.Run("before-exec", cancelBeforeExec)
 		t.Run("active", cancelActiveCommand)
+		t.Run("single-acknowledgement", cancelActiveAcknowledged)
 		for _, changed := range []string{"owner", "state", "stage"} {
 			t.Run(changed, func(t *testing.T) { cancellationStaleOwner(t, changed) })
 		}

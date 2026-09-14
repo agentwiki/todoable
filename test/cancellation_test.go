@@ -425,3 +425,104 @@ func cancellationStaleOwner(t *testing.T, changed string) {
 		}
 	}
 }
+
+// Exactly one CLI request must finish through the daemon's reconciliation loop.
+// The external TERM gate separates request persistence from confirmed stopping.
+func cancelActiveAcknowledged(t *testing.T) {
+	t.Helper()
+	f := recoveryRuntime(t)
+	f.task["repeat"] = 1
+	updateOrderTask(t, f)
+	requested, release := filepath.Join(f.root, "term-requested"), filepath.Join(f.root, "allow-stop")
+	script := filepath.Join(f.root, "runner.py")
+	raw, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	injection := `if s=='agent' and inp.get('active_effect'):
+ open(os.path.join(rd,'effect-once'),'a').write(label+'-'+str(seq)+'\n')
+ def hold_term(signum,frame):
+  open(inp['term_requested'],'w').write('TERM')
+  while not os.path.exists(inp['allow_stop']):time.sleep(.01)
+  sys.exit(143)
+ signal.signal(signal.SIGTERM,hold_term)
+`
+	writeTest(t, script, []byte(strings.Replace(string(raw), "gates=inp.get(s+'_gates',{})", injection+"gates=inp.get(s+'_gates',{})", 1)), 0700)
+	a := submitCore(t, f, "runtime", "active-ack", "resource", map[string]any{"label": "active-ack", "active_effect": true, "term_requested": requested, "allow_stop": release, "agent_gate": filepath.Join(f.root, "never-release-agent")})
+	id := a["run_id"].(string)
+	f.daemon(t)
+	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0600) })
+	effect := filepath.Join(f.dir, "runs", id, "effect-once")
+	waitUntil(t, func() bool { b, e := os.ReadFile(effect); return e == nil && string(b) == "active-ack-1\n" })
+	var pid int
+	waitUntil(t, func() bool {
+		return f.database(t).QueryRow("SELECT pid FROM steps WHERE run_id=? AND stage='agent'", id).Scan(&pid) == nil && pid > 0
+	})
+	answer := f.call(t, cancelArgs(a["submission_id"].(string), true, false)...)
+	if answer["state"] != "active" || answer["cancel_requested"] != true {
+		t.Fatalf("request claimed stopping complete %v", answer)
+	}
+	waitUntil(t, func() bool { b, e := os.ReadFile(requested); return e == nil && string(b) == "TERM" })
+	pending := submitCore(t, f, "runtime", "successor", "resource", map[string]any{"label": "successor"})
+	waitReady(t, f, pending["run_id"].(string))
+	v := f.call(t, "run", "show", id, "--json")
+	if v["state"] != "running" || v["cancel_requested"] != true || !processExists(pid) {
+		t.Fatalf("ack completed before process stop %v alive=%v", v, processExists(pid))
+	}
+	var held, resources, inflight int
+	if err = f.database(t).QueryRow("SELECT (SELECT slot_held FROM run_schedule WHERE run_id=?),(SELECT count(*) FROM resources WHERE run_id=?),(SELECT count(*) FROM steps WHERE run_id=? AND result IS NULL)", id, id, id).Scan(&held, &resources, &inflight); err != nil || held != 1 || resources != 1 || inflight != 1 {
+		t.Fatalf("active ack released reservation %d %d %d %v", held, resources, inflight, err)
+	}
+	for _, e := range orderEvents(t, f) {
+		if e.Label == "successor" && e.Stage != "start_check" {
+			t.Fatalf("successor ran before acknowledged process stopped %v", e)
+		}
+	}
+	writeTest(t, release, nil, 0600)
+	// No second Cancel and no Resume: only background reconciliation can settle.
+	waitUntil(t, func() bool { v = f.call(t, "run", "show", id, "--json"); return v["state"] == "cancelled" })
+	if processExists(pid) || v["stage"] != "cancelled" || v["effects_unknown"] != true || v["calls_used"] != float64(1) || v["repeat_remaining"] != float64(0) || len(v["runs"].([]any)) != 1 {
+		t.Fatalf("asynchronous acknowledged cancellation %v alive=%v", v, processExists(pid))
+	}
+	audits := v["cancellations"].([]any)
+	if len(audits) != 1 || len(v["resolutions"].([]any)) != 0 {
+		t.Fatalf("single request replaced by another action %v", v)
+	}
+	audit := audits[0].(map[string]any)
+	if audit["reason"] != "destination checked; stop this input" || audit["acknowledge_effects"] != true || audit["processes_stopped"] != false || v["cancel_reason"] != audit["reason"] {
+		t.Fatalf("acknowledgement audit %v", v)
+	}
+	steps := v["steps"].([]any)
+	last := steps[len(steps)-1].(map[string]any)
+	if last["stage"] != "agent" || last["result"].(map[string]any)["kind"] != "unknown" {
+		t.Fatalf("ack overwrote observed interrupted result %v", last)
+	}
+	var checks int
+	if err = f.database(t).QueryRow("SELECT (SELECT slot_held FROM run_schedule WHERE run_id=?),(SELECT count(*) FROM resources WHERE run_id=?),(SELECT count(*) FROM check_slots WHERE step_id IN(SELECT id FROM steps WHERE run_id=?))", id, id, id).Scan(&held, &resources, &checks); err != nil || held != 0 || resources != 0 || checks != 0 {
+		t.Fatalf("settled cancellation retained ownership %d %d %d %v", held, resources, checks, err)
+	}
+	completedRuns(t, f, pending, 2)
+	agents := 0
+	for _, e := range orderEvents(t, f) {
+		if e.RunID == id {
+			if e.Stage == "agent" {
+				agents++
+			}
+			if e.Stage == "after" || e.Seq != 1 {
+				t.Fatalf("cancelled request continued work %v", e)
+			}
+		}
+	}
+	if agents != 1 {
+		t.Fatalf("acknowledged agent replayed %d", agents)
+	}
+	b, err := os.ReadFile(effect)
+	if err != nil || string(b) != "active-ack-1\n" {
+		t.Fatalf("pre-stop external effect changed %q %v", b, err)
+	}
+	for _, name := range []string{"artifact", "count", "published"} {
+		if _, err := os.Stat(filepath.Join(f.dir, "runs", id, name)); !os.IsNotExist(err) {
+			t.Fatalf("cancelled agent finished hidden work %s %v", name, err)
+		}
+	}
+}

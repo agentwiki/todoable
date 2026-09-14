@@ -207,3 +207,16 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 옛 Step 소유 버전 가드를 제거한 `/tmp/todoable-cancellation-owner-4zxgujvs`는 같은 전체 race에서 SC-24/V-02/owner가 결과 NULL 변경·슬롯/자원 반환·cancelled 덮어쓰기를 검출하여 실패했다. 로그 `/tmp/cancellation-owner-mutation.log`.
 - 실행기의 취소 확인 콜백을 연결하지 않은 `/tmp/todoable-cancellation-runner-0i91rbkh`도 전체 race에서 SC-24/V-02/before-exec와 active가 실패한다. 취소된 예약이 not_started 대신 실제 exited로 실행되고, 실행 중 명령이 중단되지 않았다. 로그 `/tmp/cancellation-runner-mutation.log`. 세 변형은 원본에 적용하지 않았으며 패치는 `/tmp/cancellation-{stop,owner,runner}-mutation.patch`에 보존했다.
 - 변형 이후 원본에는 취소된 agent의 외부 진입도 정확히 한 번이어야 한다는 단정을 더해 저장 호출만으로 재실행을 놓치지 않도록 했다. 최종 full을 다시 실행하여 확인 159·실패 0·TODO 10을 확인했다. SC-38 후속에서는 수동 해소 후 슬롯 대기 중 시간 소비와 예약 후 실제 exec까지 지연된 경우 시작 직전 잔여 예산 재확인을 추가로 구현·검증한다.
+
+## 사용자 요청에 따른 취소 검증 중단 체크포인트 (2026-09-14)
+
+- 사용자가 안정적인 지점에서 중단을 요청했다. 취소 구현 `303cc62`는 full 확인 159·실패 0·TODO 10을 기록했지만 독립 1차 리뷰는 비동기 취소 배선 검증 공백으로 승인을 보류했다. 이 구현과 아래 보강은 승인된 main에 통합하지 않는다.
+- 리뷰어는 ReconcileCancellations 전체를 무동작으로 만들어도 기존 전체 race가 통과함을 확인했다. 실행 중인 agent에 효과 인정 취소를 한 번만 요청하면 정지 후 두 번째 Cancel/resume 없이 비동기로 cancelled까지 도달해야 하는데 기존 테스트는 추가 수동 행동으로 이 경로를 대신했다. 로그 `/tmp/todoable-review-cancel-reconcile.log`, 진단 `/tmp/todoable-review-cancel-active-{original,mutant}.log`.
+- 진행 중 보강은 외부 agent가 효과를 기록한 뒤 TERM을 받아도 외부 gate가 열릴 때까지 살아 있도록 한다. 단 한 번의 CLI 취소 요청, 정지 전 running·예약·자원 유지, gate 해제 후 비동기 완료, 원래 효과·감사 1건·호출 1회 보존, 후속 회차/after 금지 및 자원/슬롯 반환을 확인한다. 제품 변경 없이 SC-24/V-02에 추가했다.
+- 보강 targeted `go test -race -count=1 ./test -run '^TestScenario_SC_24$/V-02/single-acknowledgement'`만 실제 통과했다(2.177s, `/tmp/cancellation-reviewfix-targeted.log`). 보강 후 fast/full 및 무동작 변형 전체 race는 아직 실행하지 않았다. 재개 최우선은 이 보강의 fast/full·변형 검출을 완료하고 1차 수정 커밋을 고정하여 독립 2차 리뷰를 받는 것이다. 중단 뒤 새 검증이나 변형은 시작하지 않았다.
+
+## 취소 비동기 해소 1차 리뷰 보강 재개 (2026-09-14)
+
+- 보존된 단일 효과 인정 취소 E2E를 복원했다. 취소 요청 한 번 뒤 실제 프로세스 정지 전에는 자원·슬롯·예약을 유지하고 정지 후에는 추가 CLI 요청 없이 데몬이 cancelled로 해소하는지 확인한다. 외부 효과 1회·호출 1회·감사 1건을 보존하며 after·후속 회차·숨은 산출물 실행도 배제한다.
+- `scripts/verify.sh --fast` 확인 122·실패 0 통과. 기본 full 확인 160·실패 0·미구현 10으로 32개 구현 시나리오의 모든 V가 통과했다. full 전체는 남은 TODO 때문에 종료 1이며 L3 실환경은 실행하지 않았다. 로그 `/tmp/cancellation-resumed-fast.log`, `/tmp/cancellation-resumed-full.log`.
+- 비동기 `ReconcileCancellations`를 무동작으로 만든 별도 복사 `/tmp/todoable-cancellation-resumed-mutant`의 전체 `go test -race -count=1 ./...`는 SC-24/V-02/single-acknowledgement에서 취소 완료 미도달을 검출하여 종료 1이었다(159.480s). 로그 `/tmp/cancellation-resumed-mutant.log`; 패치는 `/tmp/todoable-review-cancel-reconcile.patch`다. 독립 2차 리뷰 승인은 아직 받지 않았다.
