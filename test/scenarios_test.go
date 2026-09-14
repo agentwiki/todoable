@@ -270,7 +270,7 @@ func TestScenario_SC_22(t *testing.T) {
 // TestScenario_SC_23: 차단 해소·재실행
 func TestScenario_SC_23(t *testing.T) {
 	verify(t, "V-01", func(t *testing.T) { resumeMatrix(t, false) })
-	verify(t, "V-02", func(t *testing.T) { resumeMatrix(t, true); resumeBudgetsAndArguments(t) })
+	verify(t, "V-02", func(t *testing.T) { resumeMatrix(t, true); resumeBudgetsAndArguments(t); resumeCheckCapacity(t) })
 }
 
 // TestScenario_SC_24: 취소와 완료 경합

@@ -191,13 +191,52 @@ func mismatchedProcesses(t *testing.T, request bool) {
 			if _, e := f.database(t).Exec("UPDATE steps SET process_start='0' WHERE id=?", step); e != nil {
 				t.Fatal(e)
 			}
-			f.daemon(t)
+			restarted := crashDaemon(t, f)
 			v := f.await(t, id)
 			if v["stage"] != "blocked:process_unknown" || !processExists(pid) {
 				t.Fatalf("mismatched PID killed/accepted %v live=%v", v, processExists(pid))
 			}
 			if request {
-				f.rejected(t, 6, "process_unknown", resumeArgs(id, step, "retry")...)
+				// Own the SQLite writer while stopping the daemon, so it cannot
+				// be suspended inside a transaction needed by the CLI.
+				tx, err := f.database(t).Begin()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = tx.Exec("UPDATE runtime SET remaining_ns=remaining_ns WHERE run_id=?", id); err != nil {
+					t.Fatal(err)
+				}
+				if err = restarted.Process.Signal(syscall.SIGSTOP); err != nil {
+					t.Fatal(err)
+				}
+				waitUntil(t, func() bool {
+					raw, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(restarted.Process.Pid), "stat"))
+					return err == nil && strings.Fields(string(raw[strings.LastIndexByte(string(raw), ')')+1:]))[0] == "T"
+				})
+				if err = tx.Commit(); err != nil {
+					t.Fatal(err)
+				}
+				actions := []string{"retry"}
+				if stage == "agent" {
+					actions = append(actions, "confirm-success", "confirm-failure")
+				}
+				for _, action := range actions {
+					before := resumeDurableState(t, f, id)
+					args := resumeArgs(id, step, action)
+					if action == "confirm-failure" {
+						args = append(args, "--exit-code", "17")
+					}
+					f.rejected(t, 6, "process_unknown", args...)
+					if after := resumeDurableState(t, f, id); after != before {
+						t.Fatalf("rejected %s changed durable state before=%s after=%s", action, before, after)
+					}
+					if !processExists(pid) {
+						t.Fatalf("rejected %s killed unidentified process", action)
+					}
+				}
+				if err = restarted.Process.Signal(syscall.SIGCONT); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if !processExists(pid) {
 				t.Fatal("resume killed a PID with different start identity")
@@ -220,6 +259,15 @@ func mismatchedProcesses(t *testing.T, request bool) {
 			for _, event := range orderEvents(t, f) {
 				if event.Label == "same" && event.Stage != "start_check" {
 					t.Fatalf("mismatch released resource %v", event)
+				}
+			}
+			latest := f.call(t, "run", "show", id, "--json")
+			if latest["stage"] != "blocked:process_unknown" || len(latest["steps"].([]any)) != len(v["steps"].([]any)) {
+				t.Fatalf("rejected resolution later executed %v", latest)
+			}
+			for _, name := range []string{"artifact", "published", "count"} {
+				if _, err := os.Stat(filepath.Join(f.dir, "runs", id, name)); !os.IsNotExist(err) {
+					t.Fatalf("rejected resolution produced %s: %v", name, err)
 				}
 			}
 		})
@@ -278,4 +326,90 @@ func orphanGroupRecovery(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("orphan agent replay %d", count)
 	}
+}
+
+func resumeCheckCapacity(t *testing.T) {
+	t.Helper()
+	f := manualFixture(t)
+	delete(f.task, "start")
+	updateOrderTask(t, f)
+	repair := filepath.Join(f.root, "repair")
+	finishGate := filepath.Join(f.root, "finish-release")
+	startGate := filepath.Join(f.root, "start-release")
+	a := submitCore(t, f, "runtime", "resumed", "resumed", map[string]any{"label": "resumed", "signal_stage": "finish_check", "repair": repair, "finish_check_gate": finishGate})
+	id := a["run_id"].(string)
+	f.daemon(t)
+	v := f.await(t, id)
+	if v["stage"] != "blocked:check_error" {
+		t.Fatalf("initial finish check not blocked %v", v)
+	}
+	others := []map[string]any{}
+	for _, label := range []string{"one", "two", "three", "four"} {
+		others = append(others, submitCore(t, f, "other-task", label, label, map[string]any{"label": label, "start_check_gate": startGate}))
+		waitExternal(t, f, label, "start_check", 1)
+	}
+	writeTest(t, repair, nil, 0600)
+	f.call(t, resumeArgs(id, currentStep(t, v), "retry")...)
+	time.Sleep(150 * time.Millisecond)
+	var checks, slots int
+	if e := f.database(t).QueryRow("SELECT (SELECT count(*) FROM steps WHERE run_id=? AND stage='finish_check'),(SELECT count(*) FROM check_slots)", id).Scan(&checks, &slots); e != nil || checks != 1 || slots != 4 {
+		t.Fatalf("resumed finish check exceeded cap checks=%d slots=%d err=%v", checks, slots, e)
+	}
+	events := 0
+	for _, event := range orderEvents(t, f) {
+		if event.RunID == id && event.Stage == "finish_check" {
+			events++
+		}
+	}
+	if events != 1 {
+		t.Fatalf("resumed check executed outside slot accounting %d", events)
+	}
+	writeTest(t, startGate, nil, 0600)
+	waitUntil(t, func() bool {
+		return f.database(t).QueryRow("SELECT count(*) FROM steps WHERE run_id=? AND stage='finish_check'", id).Scan(&checks) == nil && checks == 2
+	})
+	writeTest(t, finishGate, nil, 0600)
+	runs := completedRuns(t, f, a, 1)
+	if runs[0]["stage"] != "succeeded" || runs[0]["calls_used"] != float64(1) {
+		t.Fatalf("capacity release did not resume check %v", runs)
+	}
+	for _, other := range others {
+		completedRuns(t, f, other, 1)
+	}
+	before, agent, finish := 0, 0, 0
+	for _, event := range orderEvents(t, f) {
+		if event.RunID != id {
+			continue
+		}
+		switch event.Stage {
+		case "before":
+			before++
+		case "agent":
+			agent++
+		case "finish_check":
+			finish++
+		}
+	}
+	if before != 1 || agent != 1 || finish != 3 {
+		t.Fatalf("resume executed wrong stages before=%d agent=%d finish=%d", before, agent, finish)
+	}
+	for name, want := range map[string]string{"artifact": "resumed-1", "published": "resumed-1\n"} {
+		raw, e := os.ReadFile(filepath.Join(f.dir, "runs", id, name))
+		if e != nil || string(raw) != want {
+			t.Fatalf("resumed output %s %q %v", name, raw, e)
+		}
+	}
+	if e := f.database(t).QueryRow("SELECT count(*) FROM check_slots").Scan(&slots); e != nil || slots != 0 {
+		t.Fatalf("finished checks retained capacity %d %v", slots, e)
+	}
+}
+
+func resumeDurableState(t *testing.T, f runtimeFixture, id string) string {
+	t.Helper()
+	var state string
+	err := f.database(t).QueryRow(`SELECT json_object('state',r.state,'calls',r.calls_used,'stage',rt.stage,'remaining',rt.remaining_ns,'owner',rt.owner_version,'ticking',coalesce(c.ticking_at,0),'repeat',b.remaining,'resource',(SELECT count(*) FROM resources WHERE run_id=r.id),'slot',rs.slot_held,'checks',(SELECT count(*) FROM check_slots WHERE step_id IN(SELECT id FROM steps WHERE run_id=r.id)),'steps',(SELECT json_group_array(json_object('id',id,'result',result,'owner',owner_version)) FROM steps WHERE run_id=r.id),'audits',(SELECT count(*) FROM step_resolutions WHERE run_id=r.id)) FROM runs r JOIN runtime rt ON rt.run_id=r.id JOIN run_schedule rs ON rs.run_id=r.id JOIN repeat_budgets b ON b.submission_id=r.submission_id LEFT JOIN run_clocks c ON c.run_id=r.id WHERE r.id=?`, id).Scan(&state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return state
 }

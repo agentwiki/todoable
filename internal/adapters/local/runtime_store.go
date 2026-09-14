@@ -47,7 +47,7 @@ func (s *Store) Reserve() (*domain.Execution, error) {
  AND NOT EXISTS(SELECT 1 FROM steps st WHERE st.run_id=r.id AND st.result IS NULL)
  AND NOT EXISTS(SELECT 1 FROM submissions older WHERE older.task_id=s.task_id AND older.input_key=s.input_key AND older.seq<s.seq AND older.state='active')
  AND (rt.stage!='ready' OR (NOT EXISTS(SELECT 1 FROM resources WHERE key=s.concurrency_key AND run_id!=r.id) AND (SELECT count(*) FROM run_schedule WHERE slot_held=1)<2))
- AND ((rt.stage NOT IN ('start_check','finish_check') AND (rt.stage!='ready' OR (json_type(s.snapshot,'$.start') IS NULL AND json_array_length(s.snapshot,'$.before')>0))) OR (SELECT count(*) FROM check_slots)<4)
+ AND (coalesce((SELECT stage FROM resume_queue WHERE run_id=r.id),CASE WHEN rt.stage='ready' THEN CASE WHEN json_type(s.snapshot,'$.start') IS NOT NULL THEN 'start_check' WHEN json_array_length(s.snapshot,'$.before')>0 THEN 'before' ELSE 'finish_check' END ELSE rt.stage END) NOT IN ('start_check','finish_check') OR (SELECT count(*) FROM check_slots)<4)
  ORDER BY CASE WHEN r.state='running' THEN 0 WHEN rt.stage='start_check' THEN 1 ELSE 2 END,coalesce(q.seq,s.seq) LIMIT 1`, now, now).Scan(&x.RunID, &x.SubmissionID, &x.TaskID, &x.TaskVersion, &x.InputKey, &input, &x.RunSeq, &x.CallIndex, &snap, &x.Stage, &x.Phase, &last, &remaining, &started, &deadline)
 	if errors.Is(e, sql.ErrNoRows) {
 		return nil, tx.Commit()
