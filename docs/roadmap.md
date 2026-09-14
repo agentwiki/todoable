@@ -124,3 +124,11 @@ YAML alias와 설치 `config.yaml`은 현재 지원하지 않고 명시적으로
 - SC-33은 실제 CLI로 정상 alias, 기본값, manifest와 input 정확 바이트 경계, input 깊이 64/65, 기간 cap 경계, 정규화 크기 초과를 검증한다. 각 거부 전후 Task 버전 정의와 접수·입력·스냅샷·해시·Run·호출/반복 예산이 동일한지도 대조한다. 외부 실행이 발생하지 않는지 별도 실행 기록을 관측한다.
 - 빠른 검증은 확인 106·실패 0이다. 기본 full은 확인 80·실패 0·미구현 18로 SC-33의 모든 V를 포함한 구현 24개 시나리오가 통과하고, 남은 `SCENARIO_TODO` 때문에 전체 실패를 유지한다. 외부 환경을 사용하는 L3는 이번 파싱 계약 검증 범위에 포함하지 않았다.
 - 정규화 input 크기 검사만 제거한 별도 복사 `/tmp/todoable-config-mutation`에서 `go test -race -count=1 ./...`를 실제 실행했다. 원본 10바이트인 `{"x":1e-6}`의 JCS 결과가 설치 상한 10바이트를 넘는데 접수가 성공하여 SC-33/V-01이 실패했다. 전체 실행 로그는 `/tmp/config-mutation.log`에 보존한다.
+
+## SC-33 1차 독립 리뷰 보강 (2026-09-14)
+
+- 독립 리뷰에서 이미 등록된 Task가 낮아진 설치 cap을 신규 접수에서 우회하는 결함을 재현했다. 신규 접수는 현재 선택된 버전의 반복·호출·모든 기간 cap과 최종 입력 크기를 다시 검증한다. 중복 접수 판정은 그보다 앞서 유지하여 cap 변경이 기존 접수의 재전송을 새 실행이나 거부로 바꾸지 않는다.
+- SC-33 E2E는 현재 버전과 명시 버전의 cap 위반 거부, 실제 과거 버전 1의 거부와 cap을 만족하는 현재 버전 2의 접수, 기존 접수 재전송 보존을 대조한다. 각 거부 전후 전체 Task 버전 정의와 접수·예산이 동일한지도 확인한다.
+- 기존 테스트가 놓쳤던 manifest 자체의 JCS 확장을 추가했다. schedule.input의 `1e-6`이 정규화 후 네 바이트 늘어나는 원본은 원본 크기 상한에서는 거부하고 정규화 결과 정확 크기 상한에서는 허용한다. `caps.repeat_delay`, `caps.start_poll_every`, `caps.start_wait_timeout`도 설치 상한 1s에서 Task의 정확 1s 허용과 1s1ns 거부를 검증한다.
+- 신규 접수의 Task cap 재검증 제거 변형(`/tmp/todoable-config-revalidation-mutation`), manifest 정규화 크기 검사 제거 변형(`/tmp/todoable-config-manifest-mutation`), 세 기간 cap을 기본값으로 고정하는 변형(`/tmp/todoable-config-duration-mutation`)을 각각 전체 `go test -race -count=1 ./...`로 실행한다. 결과 로그는 `/tmp/config-revalidation-mutation.log`, `/tmp/config-manifest-mutation.log`, `/tmp/config-duration-mutation.log`에 보존한다.
+- 1차 수정 최종 검증: fast 확인 106·실패 0, full 확인 80·실패 0·미구현 18. 위 세 변형의 전체 race 실행은 모두 SC-33/V-01에서 실패했다. manifest 변형은 초과 정의 등록이 성공했으며, 기간 cap 변형은 검증 코드 2 대신 정의 충돌 코드 3까지 진행했다. 제품의 전체 완료는 여전히 남은 TODO 때문에 아니다.

@@ -162,6 +162,12 @@ func submitTx(tx *sql.Tx, in domain.SubmissionInput, config Config) (domain.Resu
 	if e = json.Unmarshal([]byte(definition), &task); e != nil {
 		return out, e
 	}
+	if e = validateTaskCaps(task, config); e != nil {
+		return out, e
+	}
+	if len(in.Input) > config.MaxInputBytes {
+		return out, domain.Invalid("input exceeds current installation cap")
+	}
 	snap, e := snapshot(task)
 	if e != nil {
 		return out, e

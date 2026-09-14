@@ -70,3 +70,21 @@ func (s *Store) ReadManifest(path string) ([]byte, error) {
 func (s *Store) ReadSubmission(path string) ([]byte, error) {
 	return ReadFileLimit(path, s.config.MaxInputBytes+16384)
 }
+
+func validateTaskCaps(task domain.Task, config Config) error {
+	if task.Repeat > config.MaxRepeat || task.Finish.MaxCalls > config.MaxCallsPerRun {
+		return domain.Invalid("selected Task version exceeds current installation caps")
+	}
+	if !duration(task.RepeatDelay, 0, capDuration(config, "repeat_delay")) {
+		return domain.Invalid("repeat_delay exceeds current installation cap")
+	}
+	if task.Start != nil && (!duration(task.Start.PollEvery, time.Second, capDuration(config, "start_poll_every")) || !duration(task.Start.WaitTimeout, 0, capDuration(config, "start_wait_timeout"))) {
+		return domain.Invalid("start duration exceeds current installation cap")
+	}
+	for k, v := range task.Limits {
+		if !duration(v, time.Nanosecond, capDuration(config, k)) {
+			return domain.Invalid("Task limit exceeds current installation cap: " + k)
+		}
+	}
+	return nil
+}

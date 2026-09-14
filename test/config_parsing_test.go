@@ -75,6 +75,29 @@ func TestScenario_SC_33(t *testing.T) {
 			parsingRejected(t, f, "task", "register", path)
 		}
 
+		// The source fits exactly but JCS expands 1e-6 into 0.000001.
+		normalizedManifest := fmt.Sprintf(`{"version":1,"id":"normalized","workdir":%q,"agent":["/bin/true"],"prompt":"work","finish":{"check":["/bin/true"]},"schedule":{"every":"1s","input_key":"i","concurrency_key":"c","input":{"x":1e-6}}}`, filepath.Dir(f.dir))
+		writeTest(t, path, []byte(normalizedManifest), 0600)
+		writeTest(t, config, []byte(fmt.Sprintf("max_manifest_bytes: %d", len(normalizedManifest))), 0600)
+		parsingRejected(t, f, "task", "register", path)
+		writeTest(t, config, []byte(fmt.Sprintf("max_manifest_bytes: %d", len(normalizedManifest)+4)), 0600)
+		f.call(t, "task", "register", path)
+		for _, field := range []string{"repeat_delay", "start_poll_every", "start_wait_timeout"} {
+			writeTest(t, config, []byte("caps: {"+field+": 1s}"), 0600)
+			valid := strings.Replace(base, "id: parsed", "id: configured-"+field, 1)
+			switch field {
+			case "repeat_delay":
+				valid += "repeat_delay: 1s\n"
+			case "start_poll_every":
+				valid += "  poll_every: 1s\n"
+			case "start_wait_timeout":
+				valid += "  wait_timeout: 1s\n"
+			}
+			writeTest(t, path, []byte(valid), 0600)
+			f.call(t, "task", "register", path)
+			writeTest(t, path, []byte(strings.Replace(valid, ": 1s\n", ": 1s1ns\n", 1)), 0600)
+			parsingRejected(t, f, "task", "register", path)
+		}
 		// Every Task cap accepts its boundary and rejects one nanosecond more.
 		for field, cap := range map[string]string{"start_check_timeout": "5m", "finish_check_timeout": "5m", "before_timeout": "1h", "agent_timeout": "4h", "after_timeout": "1h", "run_timeout": "24h"} {
 			writeTest(t, config, []byte("{}"), 0600)
@@ -91,6 +114,36 @@ func TestScenario_SC_33(t *testing.T) {
 			writeTest(t, config, []byte(cfg), 0600)
 			writeTest(t, path, []byte(base+"repeat: 1\n"), 0600)
 			parsingRejected(t, f, "task", "register", path)
+		}
+		writeTest(t, config, []byte("max_input_bytes: 10"), 0600)
+		// Registration is historical: each new submission checks the selected version against current caps.
+		for _, cfg := range []string{"max_calls_per_run: 2", "max_repeat: 1", "caps: {agent_timeout: 1s}"} {
+			// concurrent has repeat=2, max_calls=3 and the default 30m agent timeout.
+			writeTest(t, config, []byte(cfg), 0600)
+			for _, version := range []string{"", `,"task_version":1`} {
+				writeTest(t, f.input, []byte(`{"task_id":"concurrent","input_key":"new-capped","input":{},"concurrency_key":"new-capped"`+version+`}`), 0600)
+				parsingRejected(t, f, "run", "submit", f.input)
+			}
+		}
+
+		writeTest(t, config, []byte("{}"), 0600)
+		historic := strings.Replace(base, "id: parsed", "id: archived", 1)
+		writeTest(t, path, []byte(historic), 0600)
+		f.call(t, "task", "register", path)
+		writeTest(t, path, []byte(strings.Replace(historic, "finish:\n", "finish:\n  max_calls: 1\n", 1)), 0600)
+		f.call(t, "task", "update", path, "--if-version", "1")
+		writeTest(t, config, []byte("max_calls_per_run: 2"), 0600)
+		writeTest(t, f.input, []byte(`{"task_id":"archived","input_key":"old","input":{},"concurrency_key":"old","task_version":1}`), 0600)
+		parsingRejected(t, f, "run", "submit", f.input)
+		writeTest(t, f.input, []byte(`{"task_id":"archived","input_key":"new","input":{},"concurrency_key":"new"}`), 0600)
+		if result := f.call(t, "run", "submit", f.input); result["task_version"] != float64(2) {
+			t.Fatal(result)
+		}
+		// A replay remains idempotent even when the stored version no longer satisfies current Task caps.
+		writeTest(t, config, []byte("max_calls_per_run: 2"), 0600)
+		writeTest(t, f.input, []byte(`{"task_id":"concurrent","input_key":"item","input":{"b":[true,"1"],"a":1},"concurrency_key":"resource"}`), 0600)
+		if result := f.call(t, "run", "submit", f.input); result["deduplicated"] != true {
+			t.Fatal(result)
 		}
 		writeTest(t, config, []byte("max_input_bytes: 10"), 0600)
 		// JCS expands this legal source from ten bytes to fourteen bytes.
