@@ -312,6 +312,9 @@ func intentAndSavedResult(t *testing.T) {
 			if v["stage"] != want || v["calls_used"] != float64(1) {
 				t.Fatalf("restored boundary %v", v)
 			}
+			if !saved {
+				assertUnidentifiedIntent(t, f, id)
+			}
 			n := 0
 			for _, e := range orderEvents(t, f) {
 				if e.RunID == id && e.Stage == "agent" {
@@ -331,6 +334,54 @@ func intentAndSavedResult(t *testing.T) {
 				t.Fatalf("durable intent %d %s %v", calls, input, e)
 			}
 		})
+	}
+}
+
+func assertUnidentifiedIntent(t *testing.T, f runtimeFixture, id string) {
+	t.Helper()
+	var held, owners, calls, pid, pgid int
+	var result, boot, start string
+	err := f.database(t).QueryRow(`SELECT rs.slot_held,(SELECT count(*) FROM resources WHERE run_id=r.id AND key='resource'),r.calls_used,coalesce(st.pid,0),coalesce(st.pgid,0),coalesce(st.boot_id,''),coalesce(st.process_start,''),json_extract(st.result,'$.kind') FROM runs r JOIN run_schedule rs ON rs.run_id=r.id JOIN steps st ON st.run_id=r.id WHERE r.id=? AND st.stage='agent'`, id).Scan(&held, &owners, &calls, &pid, &pgid, &boot, &start, &result)
+	if err != nil || held != 1 || owners != 1 || calls != 1 || pid != 0 || pgid != 0 || boot != "" || start != "" || result != "process_unknown" {
+		t.Fatalf("unidentified intent lost process/slot evidence held=%d owners=%d calls=%d pid=%d pgid=%d boot=%q start=%q result=%q err=%v", held, owners, calls, pid, pgid, boot, start, result, err)
+	}
+	same := submitCore(t, f, "runtime", "same-resource", "resource", map[string]any{"label": "same-resource"})
+	waitReady(t, f, same["run_id"].(string))
+	firstGate := filepath.Join(f.root, "unidentified-release")
+	first := submitCore(t, f, "runtime", "independent-first", "independent-first", map[string]any{"label": "independent-first", "before_gate": firstGate})
+	waitExternal(t, f, "independent-first", "before", 1)
+	second := submitCore(t, f, "runtime", "independent-second", "independent-second", map[string]any{"label": "independent-second"})
+	waitReady(t, f, second["run_id"].(string))
+	// Both independent Runs are eligible. Only one physical interval can run
+	// alongside the unidentified intent's still-reserved Run slot.
+	time.Sleep(150 * time.Millisecond)
+	view := f.call(t, "run", "show", second["run_id"].(string), "--json")
+	if view["state"] != "waiting" || view["calls_used"] != float64(0) {
+		t.Fatalf("unidentified intent slot reused %v", view)
+	}
+	for _, event := range orderEvents(t, f) {
+		if (event.Label == "independent-second" || event.Label == "same-resource") && event.Stage != "start_check" {
+			t.Fatalf("unidentified intent allowed extra changing interval %v", event)
+		}
+	}
+	if err = f.database(t).QueryRow("SELECT count(*) FROM run_schedule WHERE slot_held=1").Scan(&held); err != nil || held != 2 {
+		t.Fatalf("unidentified plus live Run slots %d %v", held, err)
+	}
+	writeTest(t, firstGate, nil, 0600)
+	completedRuns(t, f, first, 1)
+	completedRuns(t, f, second, 1)
+	expected := []expectedOrderRun{{first["run_id"].(string), "independent-first", 1, append(runtimeStages(1), "after", "after_done")}, {second["run_id"].(string), "independent-second", 1, append(runtimeStages(1), "after", "after_done")}}
+	assertOrderExecutions(t, f, expected)
+	for _, event := range orderEvents(t, f) {
+		if event.RunID == id && event.Stage == "agent" {
+			t.Fatal("unissued agent created an external effect")
+		}
+		if event.Label == "same-resource" && event.Stage != "start_check" {
+			t.Fatalf("unidentified resource released %v", event)
+		}
+	}
+	if err = f.database(t).QueryRow("SELECT slot_held FROM run_schedule WHERE run_id=?", id).Scan(&held); err != nil || held != 1 {
+		t.Fatalf("unidentified slot returned after unrelated work %d %v", held, err)
 	}
 }
 
