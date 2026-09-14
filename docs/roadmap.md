@@ -1,6 +1,6 @@
 # 남은 작업
 
-SC-01~24·26·32~37·39~40의 33개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소를 구현했으며 시간 예산 전체 계약은 해당 미구현 시나리오가 남아 있다.
+SC-01~24·26~27·32~37·39~40의 34개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소를 구현했으며 시간 예산 전체 계약은 해당 미구현 시나리오가 남아 있다.
 
 현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task enable ID`, `task disable ID`, `run submit FILE`, `run show RUN_ID --json`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `submission cancel ID --reason TEXT [--acknowledge-effects] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 다른 명령과 schedule 외의 사람용 조회 출력은 미구현이다.
 
@@ -24,7 +24,7 @@ SC-01~24·26·32~37·39~40의 33개 시나리오 E2E를 구현했다. 접수 검
 | 부분 구현 | 연속 시간 소비와 읽기 검사 복구. 영 시간 예산 확인·종료 복구 결합 미완 | SC-38·42 |
 | E2E 통과 | 출력 저장 상한·파이프 소비, 검사 timeout과 정지 미확인 검사 슬롯 유지 | SC-26 |
 | E2E 통과 | 실행 중 설정 해시 비교·재시작 실행/검사/접수/로그 상한·기존 예산 보존 | SC-40 |
-| 부분 구현 | 완료 stdout·stderr의 기간/총량 정리. 진행·차단·전체 보존 계약 E2E는 후속 | SC-27 |
+| E2E 통과 | 오래된 완료 stdout·stderr 기간/총량 정리, 진행·차단 로그와 실제 수동 감사·이력·중복 기록 보존 | SC-27 |
 | 미구현 | 저장 실패와 storage_paused 모드 | SC-25 |
 | 부분 구현 | JSON 오류와 접수·Run 조회. 나머지 CLI·데몬 경계 | SC-41 |
 | 미구현 | 실제 이슈 수정·자료 변환·기간 리포트 | SC-28~30 |
@@ -265,3 +265,23 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 독립 취소 리뷰가 비동기 해소 무동작과 정지 증거 우회 두 변형을 전체 race에서 검출했다. 오케스트레이터는 비동기 해소 무동작의 전체 race 실패를 다시 재현했다(SC-24/V-02/single-acknowledgement, 174.190s, `/tmp/cancellation-current-orchestrator.log`).
 - 통합 `scripts/verify.sh --fast` 확인 132·실패 0 통과. 기본 full 확인 163·실패 0·미구현 9로 33개 구현 시나리오의 모든 V가 통과했다. 전체 full은 TODO 때문에 종료 1이며 실환경 L3는 실행하지 않았다. 로그 `/tmp/cancellation-integration-fast.log`, `/tmp/cancellation-integration-full.log`.
 - 취소 CLI의 설정 비교만 제거한 별도 복사 `/tmp/todoable-cancel-config-mutant`의 전체 `go test -race -count=1 ./...`는 SC-40/V-01에서 요청이 코드 0으로 접수되는 것을 검출해 종료 1이었다(178.168s). 로그 `/tmp/cancellation-integration-config-mutant.log`. 이 통합 배선의 독립 리뷰는 별도로 필요하다.
+
+## SC-40 통합 독립 감사·오케스트레이터 재현 (2026-09-14)
+
+- `fd189df`를 현재 시나리오·코드 기준으로 독립 검토하여 SC-40 범위의 차단 결함 없이 통합 승인했다. 수동 재개 실제 다음 단계와 동일 Run 자원 예외를 유지하면서 설치 상한을 적용한 예약 SQL, resume 설정 검사와 오류 종류·감사·외부 실행 불변 검증을 확인했다. 과거 3차 리뷰의 실패 로그는 공개 잠금 제거 변형을 검출한 기록이며 정상 제품의 미해결 실패를 뜻하지 않는다.
+- 오케스트레이터가 `fd189df`에서 `scripts/verify.sh`를 직접 재실행하여 fast 확인 132, full 확인 142·실패 0·TODO 12를 확인했다. 로그 `/tmp/current-sc40-integrated-full.log`. 별도 복사 `/tmp/todoable-sc40-orchestrator-publication-IYyFwI`에 데몬 공개 잠금 제거 변형을 적용하고 전체 `go test -race -count=1 ./...`를 실행했다. 종료 1이며 두 local 공개 잠금 회귀가 실패하고 E2E 패키지는 통과했다. 로그 `/tmp/sc40-orchestrator-publication-current.log`.
+
+## SC-27 완료 로그 정리·실제 감사 보존 (2026-09-14)
+
+- SC-40에서 구현한 정리 동작에 실제 CLI/데몬 E2E를 연결했다. 기존 부분 검증 stash `4c289c60`은 삭제하지 않고 별도 작업트리에 복구했다. 제품 코드는 변경하지 않았다.
+- 완료 접수 하나를 실제 변경 단계의 시그널 종료로 차단한 뒤 공개 `resume ... --action confirm-success`로 해소한다. Step 식별자·행동·사유·manual 표시를 확인한 실제 감사가 있는 접수의 상세 로그를 정리하고, 원래 결과·감사 전체 행·최종 요약·Task 버전·접수 스냅샷·입력·중복 해시·호출/반복 예산·프로세스 증거와 산출물이 보존되는지 대조한다.
+- 총량 검증은 완료 로그 정확 640바이트를 유지한 뒤 새 완료 접수를 추가해 오래된 접수만 삭제되는지 확인한다. 기간 검증은 충분한 총량에서 오래된 완료 로그만 만료시키고 젊은 완료 로그를 보존한다. 두 흐름 모두 실제 진행·차단 로그의 바이트를 보존하며 삭제된 완료 입력 재전송이 같은 접수이고 외부 명령을 다시 실행하지 않는지 확인한다.
+- SC-27 대상 race E2E와 `scripts/verify.sh --fast` 확인 132·실패 0을 확인했다. 이번 범위에는 SC-25 저장 실패 모드 및 SC-41 전체 로그 조회 CLI 구현을 포함하지 않았고 해당 TODO를 유지한다. L3 실환경은 실행하지 않았다.
+- 기본 `scripts/verify.sh`는 fast 확인 132·실패 0, full 확인 145·실패 0·미구현 11로 SC-27을 포함한 구현 31개 시나리오의 모든 V를 확인했다. 로그 `/tmp/log-retention-fast.log`, `/tmp/log-retention-full.log`. 남은 TODO로 전체 full의 종료는 1이다.
+- 별도 복사 `/tmp/todoable-log-retention-audit-mutation-GqxdrW`에서 실제 정리 대상 접수의 수동 감사 행을 함께 삭제하는 변형을 전체 `go test -race -count=1 ./...`로 실행했다. SC-27/V-01·V-02 모두 `cleanup changed durable records`로 감사 소실을 검출했으며 실제 종료 1을 확인했다. 로그 `/tmp/log-retention-audit-mutation.log`. 원 작업트리의 제품 코드는 변형하지 않았다.
+
+## 취소·설정·완료 로그 보존 통합 (2026-09-14)
+
+- 취소/설정 통합 `28547a7`에 독립 승인된 SC-27 `5846dfc`를 병합했다. 변경은 SC-27 E2E와 검증 문서이며 제품 코드에는 추가 변경이 없다. 양쪽 이력과 현재 34개 구현 시나리오 상태를 보존했다.
+- `scripts/verify.sh`의 빠른 등급 확인 132·실패 0, full 확인 166·실패 0·미구현 8을 확인했다. 구현한 34개 시나리오 모든 V는 통과하며 나머지 TODO로 full 전체는 종료 1이다. 로그 `/tmp/cancellation-retention-integration-full.log`. L3 실환경은 실행하지 않았다.
+- SC-27 감사 삭제 변형은 독립 리뷰와 오케스트레이터의 전체 race에서 SC-27/V-01·V-02 실패로 검출했다. 오케스트레이터 로그 `/tmp/log-retention-orchestrator-current.log`. 이 병합은 기존 검증 묶음을 함께 실행하며 새로운 제품 변형은 추가하지 않았다. 취소 CLI 설정 가드의 별도 통합 리뷰는 진행 중이다.

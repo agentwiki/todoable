@@ -304,17 +304,6 @@ func TestScenario_SC_26(t *testing.T) {
 	verify(t, "V-02", func(t *testing.T) { unknownCheckSlots(t) })
 }
 
-// TestScenario_SC_27: 완료 로그 정리
-func TestScenario_SC_27(t *testing.T) {
-	todo(t, "SC-27")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-27")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-27")
-	})
-}
-
 // TestScenario_SC_28: 이슈 수정 실사용
 func TestScenario_SC_28(t *testing.T) {
 	todo(t, "SC-28")
