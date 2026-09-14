@@ -17,10 +17,12 @@ import (
 )
 
 type Store struct {
-	db     *sql.DB
-	dir    string
-	config Config
-	opened time.Time
+	health   storageHealth
+	SyncFile func(*os.File) error
+	db       *sql.DB
+	dir      string
+	config   Config
+	opened   time.Time
 }
 
 func Open(dir string) (*Store, error) {
@@ -226,7 +228,8 @@ func (s *Store) Run(id string) (map[string]any, error) {
 	if e != nil {
 		return nil, e
 	}
-	out := map[string]any{"protocol_version": 1, "task_id": task, "task_version": version, "input_key": inputKey, "input": json.RawMessage(input), "submission_id": submission, "run_id": id, "run_seq": seq, "state": state, "stage": "waiting", "calls_used": calls, "repeat": total, "repeat_remaining": remaining, "concurrency_key": concurrency, "predecessor": nil, "next_check_at": nil, "scheduled_at": nil, "last_check": nil, "time_remaining": nil, "cancel_requested": false, "blocked_reason": nil, "steps": []any{}}
+	_, pauseErr := os.Stat(filepath.Join(s.dir, "storage_paused"))
+	out := map[string]any{"storage_paused": pauseErr == nil, "protocol_version": 1, "task_id": task, "task_version": version, "input_key": inputKey, "input": json.RawMessage(input), "submission_id": submission, "run_id": id, "run_seq": seq, "state": state, "stage": "waiting", "calls_used": calls, "repeat": total, "repeat_remaining": remaining, "concurrency_key": concurrency, "predecessor": nil, "next_check_at": nil, "scheduled_at": nil, "last_check": nil, "time_remaining": nil, "cancel_requested": false, "blocked_reason": nil, "steps": []any{}}
 	var at string
 	if e = s.db.QueryRow("SELECT scheduled_at FROM scheduled_submissions WHERE submission_id=?", submission).Scan(&at); e == nil {
 		out["scheduled_at"] = at

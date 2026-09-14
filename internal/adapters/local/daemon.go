@@ -30,9 +30,10 @@ func (s *Store) Daemon() (*Daemon, error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	e = s.recoverIntents(ctx)
 	if e != nil {
-		stop()
-		_ = lock.Close()
-		return nil, e
+		s.health.recovery = true
+		s.PauseStorage(e)
+	} else {
+		_ = os.Remove(filepath.Join(s.dir, "storage_paused"))
 	}
 	return &Daemon{lock: lock, context: ctx, stop: stop}, nil
 }
@@ -49,6 +50,8 @@ func (d *Daemon) Close() error { d.stop(); return d.lock.Close() }
 func (d *Daemon) Stopped(err error) bool {
 	return errors.Is(err, context.Canceled) || d.context.Err() != nil
 }
-func (s *Store) Executor() *Runner { return &Runner{Dir: s.dir, Started: s.Started} }
+func (s *Store) Executor() *Runner {
+	return &Runner{Dir: s.dir, Started: s.Started, Failed: s.failedExecution, SyncFile: s.syncLogFile, StorageFailure: s.PauseStorage, AdmissionOpen: func() bool { return !s.storagePaused() }}
+}
 
 func (d *Daemon) Stop() { d.stop() }

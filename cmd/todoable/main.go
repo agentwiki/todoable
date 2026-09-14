@@ -103,19 +103,23 @@ func daemon(dir string) int {
 	}
 	defer func() { _ = d.Close() }()
 	if err = usecases.PublishSchedules(store); err != nil {
-		return local.Fail(err)
+		store.PauseStorage(err)
 	}
 	runner := store.Executor()
 	var workers sync.WaitGroup
-	errors := make(chan error, 7)
+
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
 		for d.Context().Err() == nil {
+			if !store.StorageReady(d.Context()) {
+				if !d.Pause() {
+					return
+				}
+				continue
+			}
 			if e := usecases.PublishSchedules(store); e != nil {
-				errors <- e
-				d.Stop()
-				return
+				store.PauseStorage(e)
 			}
 			if !d.Pause() {
 				return
@@ -127,11 +131,15 @@ func daemon(dir string) int {
 		go func() {
 			defer workers.Done()
 			for d.Context().Err() == nil {
+				if !store.StorageReady(d.Context()) {
+					if !d.Pause() {
+						return
+					}
+					continue
+				}
 				worked, e := usecases.Advance(d.Context(), store, runner)
 				if e != nil {
-					errors <- e
-					d.Stop()
-					return
+					store.PauseStorage(e)
 				}
 				if !worked && !d.Pause() {
 					return
@@ -140,9 +148,6 @@ func daemon(dir string) int {
 		}()
 	}
 	workers.Wait()
-	close(errors)
-	for e := range errors {
-		return local.Fail(e)
-	}
+
 	return 0
 }
