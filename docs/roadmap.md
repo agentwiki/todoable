@@ -1,6 +1,6 @@
 # 남은 작업
 
-SC-01~24·26~27·32~40의 35개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소, 연속 Run 시간 예산과 읽기 검사 복구를 구현했다.
+SC-01~24·26~27·29·32~40의 36개 시나리오 E2E를 구현했다. SC-29는 --deep에서 실제 ImageMagick과 Pillow를 실행하며 독립 리뷰는 대기 중이다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소, 연속 Run 시간 예산과 읽기 검사 복구를 구현했다.
 
 현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task enable ID`, `task disable ID`, `run submit FILE`, `run show RUN_ID --json`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `submission cancel ID --reason TEXT [--acknowledge-effects] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 다른 명령과 schedule 외의 사람용 조회 출력은 미구현이다.
 
@@ -27,7 +27,8 @@ SC-01~24·26~27·32~40의 35개 시나리오 E2E를 구현했다. 접수 검증�
 | E2E 통과 | 오래된 완료 stdout·stderr 기간/총량 정리, 진행·차단 로그와 실제 수동 감사·이력·중복 기록 보존 | SC-27 |
 | 미구현 | 저장 실패와 storage_paused 모드 | SC-25 |
 | 부분 구현 | JSON 오류와 접수·Run 조회. 나머지 CLI·데몬 경계 | SC-41 |
-| 미구현 | 실제 이슈 수정·자료 변환·기간 리포트 | SC-28~30 |
+| L3 E2E 통과·리뷰 대기 | 고정 PNG의 실제 병렬 WebP 변환·독립 픽셀 대조·실패 격리·재전송 보존 | SC-29 |
+| 미구현 | 실제 이슈 수정·기간 리포트 | SC-28·30 |
 
 YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이 제한과 설치 cap을 적용한다. 신규 접수는 선택한 현재·과거 Task 버전을 현 cap으로 검증하고, 기존 접수의 재전송은 같은 접수로 돌려준다. 실행 중 데몬과 CLI의 설정 해시가 다르면 조회만 허용하고 변경 명령은 재시작을 요구한다. 재시작한 데몬은 실행·검사·로그 관리의 현 상한을 사용하며 기존 접수의 스냅샷·예산은 유지한다. 일정 정의·활성화·비활성화·기간 수동 접수는 구현했으나 Task 전체 취소·조회는 SC-31의 미완 항목이다. 접수 환경 스냅샷을 실제 실행에 전달하는 계약은 SC-34에서 확인했다.
 
@@ -296,3 +297,13 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - Executor 잔여시간 콜백을 제거한 `/tmp/todoable-time-budget-exec-mutant`의 전체 `go test -race -count=1 ./...`는 SC-38/V-01/continuity/delayed-exec에서 만료된 예약이 실제 exited로 실행됨을 검출해 종료 1이었다(229.958s, `/tmp/time-budget-exec-mutant.log`). 수동 해소의 시계 재시작을 제거한 `/tmp/todoable-time-budget-resume-mutant`도 같은 전체 race에서 resume-queue가 0이어야 할 예산을 1.9493873s로 보존한 것을 검출해 종료 1이었다(229.465s, `/tmp/time-budget-resume-mutant.log`).
 - 양수 잔여시간으로 실행 제한을 줄이는 분기만 제거한 `/tmp/todoable-time-budget-limit-mutant`의 전체 race는 delayed-limited-exec가 실제 실행 2.006977337s를 관측하여 1.3s 상한 위반으로 종료 1이었다(223.569s, `/tmp/time-budget-limit-mutant.log`). 세 변형 패치는 `/tmp/time-budget-{exec,resume,limit}-mutation.patch`에 보존했다.
 - 최종 `scripts/verify.sh`는 fast 확인 132·실패 0, full 확인 184·실패 0·미구현 7로 SC-38을 포함한 35개 구현 시나리오의 모든 V가 통과했다(`/tmp/time-budget-final-full-complete.log`). 전체 full은 남은 TODO 때문에 종료 1이다. L3 실제 외부 업무·실환경 `--deep`은 이번 로컬 시간 예산 범위에서 실행하지 않았다. 독립 리뷰와 오케스트레이터의 핵심 변형 재현은 후속이다.
+
+
+## SC-29 실제 자료 변환 (2026-09-14)
+
+- 별도 테스트 디렉터리에서 실제 CLI 등록·접수와 데몬을 통해 ImageMagick 7.1.1-43 Q16을 실행한다. Git·htop·libpng의 설치 원본 세 개와 출처·라이선스 고지, 원본 SHA256·크기·RGBA SHA256을 test/testdata/conversion에 고정했다. Pillow 11.1.0의 별도 oracle이 산출물의 모든 RGBA 바이트를 확인한다.
+- 변환기의 stdin 원본 전달을 잠시 대기시켜 실제 magick PID 두 개를 /proc에서 관측하고 전역 실행 상한 2를 넘는 세 번째 호출이 없는지 확인한다. 입력별 원본 해시·변환 옵션과 Task 버전, 결과·Step 이력을 대조하고 재전송 전후 접수·예산·외부 호출 수·산출물 해시와 mtime이 같은지 확인한다.
+- 손상 PNG를 정상 자료와 함께 접수하면 실제 변환기는 코드1과 improper image header stderr를 남기고 failed:max_calls가 된다. 정상 세 자료는 모두 원본 픽셀과 일치하며 실패 자료의 재전송도 새 변환을 만들지 않는다.
+- `scripts/verify.sh --deep`의 fast는 확인132·실패0, E2E는 확인187·실패0·TODO6·건너뜀0이며 SC-29/V-01·V-02를 실제로 실행했다. 로그 /tmp/todoable-l3-sc29-deep.log. 기본 `scripts/verify.sh`는 fast132·실패0, E2E 확인184·실패0·TODO6·건너뜀1이다. SC-29는 명시적인 L3 실행 조건 때문에 기본 모드에서 건너뛰며 로그는 /tmp/todoable-l3-sc29-full.log다. 두 모드의 전체 종료는 남은 미구현 때문에1이며 제품 전체 완료가 아니다.
+- 별도 복사 /tmp/todoable-l3-exact-mutation에서 webp:exact=true를 false로 뒤집어 전체 `E2E_DEEP=1 go test -race -count=1 ./...`를 실행했다. 투명 픽셀 아래 RGB 소실로 SC-29/V-01·V-02의 htop 결과가 failed:max_calls가 되어 종료1로 검출했다(218.834s). 로그 /tmp/todoable-l3-sc29-exact-mutation.log. 원본 구현은 유지했다.
+- 새 문서 전용 도구는 도입하지 않았다. 링크 대상·설치 출처·라이선스 파일·실행 명령을 대조했고 실제 명령은 deep E2E로 확인했다. SC-28·30의 서비스·모델 준비는 이 SC-29 검증 결과에 포함하지 않는다.
