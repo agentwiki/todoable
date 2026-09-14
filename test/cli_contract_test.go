@@ -280,21 +280,43 @@ func assertRunFields(t *testing.T, view map[string]any) {
 	}
 }
 func cliObservationAndLogs(t *testing.T) {
-	f := orderFixture(t, 0, "0s", "0s")
+	f := newRuntime(t)
+	f.task["prompt"] = "second definition without a start condition"
 	delete(f.task, "start")
 	updateOrderTask(t, f)
 	script := strings.Replace(orderScript, "gates=inp.get(s+'_gates',{})", "sys.stdout.buffer.write((s+' out\\n').encode()+b'\\xff');sys.stdout.flush();sys.stderr.write(s+' err\\n');sys.stderr.flush()\ngates=inp.get(s+'_gates',{})", 1)
 	writeTest(t, filepath.Join(f.root, "runner.py"), []byte(script), 0700)
-	for _, version := range []string{"1", "2"} {
-		view := f.call(t, "task", "show", "runtime", "--version", version, "--json")
+	// Expectations describe the two submitted definitions, independently of
+	// TaskView and the currently mutable fixture map.
+	for _, expected := range []struct {
+		version, prompt string
+		number          float64
+		start           bool
+	}{
+		{"1", "literal {{input}} $HOME", 1, true},
+		{"2", "second definition without a start condition", 2, false},
+	} {
+		view := f.call(t, "task", "show", "runtime", "--version", expected.version, "--json")
+		definition := view["definition"].(map[string]any)
+		if view["task_version"] != expected.number || view["current_version"] != float64(2) || definition["prompt"] != expected.prompt {
+			t.Fatalf("selected Task definition differs from submitted version %s: %v", expected.version, view)
+		}
+		start, hasStart := definition["start"].(map[string]any)
+		if hasStart != expected.start || (hasStart && start["poll_every"] != "1s") {
+			t.Fatalf("selected Task start condition differs for version %s: %v", expected.version, definition)
+		}
 		raw, _ := json.Marshal(view)
-		if bytes.Contains(raw, []byte("task-value")) || bytes.Contains(raw, []byte("submission-secret")) || view["definition"].(map[string]any)["env"].(map[string]any)["OVERRIDE"] != "<redacted>" {
+		if bytes.Contains(raw, []byte("task-value")) || bytes.Contains(raw, []byte("submission-secret")) || definition["env"].(map[string]any)["OVERRIDE"] != "<redacted>" {
 			t.Fatalf("Task environment exposed %s", raw)
 		}
-		human := cliHuman(t, f, "task", "show", "runtime", "--version", version)
-		if strings.Contains(human, "task-value") || !strings.Contains(human, "Enabled: true") {
+		human := cliHuman(t, f, "task", "show", "runtime", "--version", expected.version)
+		if strings.Contains(human, "task-value") || !strings.Contains(human, "Enabled: true") || !strings.Contains(human, "Task: runtime (version "+expected.version+", current 2)") || !strings.Contains(human, expected.prompt) {
 			t.Fatal(human)
 		}
+	}
+	latest := f.call(t, "task", "show", "runtime", "--json")
+	if latest["task_version"] != float64(2) || latest["current_version"] != float64(2) || latest["definition"].(map[string]any)["prompt"] != "second definition without a start condition" {
+		t.Fatalf("default Task version does not select current definition: %v", latest)
 	}
 	gate := filepath.Join(f.root, "follow-release")
 	first := submitCore(t, f, "runtime", "same", "A", map[string]any{"label": "A", "before_gate": gate})

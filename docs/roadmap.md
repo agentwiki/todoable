@@ -298,3 +298,11 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - `scripts/verify.sh --fast` 확인 132·실패 0, 기본 full 확인 172·실패 0·TODO 6을 확인했다. SC-31·41을 포함한 구현 36개 시나리오의 모든 V가 통과하며 미구현으로 전체 full은 종료 1이다. 로그 `/tmp/cli-contract-fast2.log`, `/tmp/cli-contract-full.log`. 이후 다른 Task 접수 보존과 status 응답값 단정을 보강한 최종 전체 검증도 fast 132·full 172·실패 0·TODO 6으로 같은 결과를 확인했다. 최종 로그 `/tmp/cli-contract-final-full.log`.
 - 별도 복사 `/tmp/todoable-cli-stale-g7vi1q4w`에서 오래된 데몬 관측의 stale을 항상 false로 만드는 변형을 전체 `go test -race -count=1 ./...`로 실행했다. SC-41/V-02가 SIGSTOP 후 오래된 running을 최신으로 표시한 것을 검출해 실제 종료 1이다. 로그 `/tmp/cli-contract-stale-mutation.log`.
 - 별도 복사 `/tmp/todoable-cli-taskcancel-ohyl3j0v`에서 Task 취소 대상 조회를 첫 접수 한 건으로 제한하는 변형도 전체 race에서 실제 종료 1이다. SC-31/V-01이 누락 접수, V-02가 두 번째 접수 감사 실패를 건너뛴 잘못된 성공을 검출했다. 로그 `/tmp/cli-contract-taskcancel-mutation.log`. 두 변형은 원 작업트리에 적용하지 않았다.
+
+## CLI 과거 Task 정의 1차 리뷰 보강 (2026-09-14)
+
+- 독립 리뷰는 과거 버전 요청을 현재 버전으로 바꾸는 변형이 전체 race를 통과하는 검증 공백을 확인했다. 기존 관측 E2E는 v1/v2의 환경변수 숨김만 확인하여 선택된 버전·정의를 판별하지 못했다. 제품 결함으로 확정된 것은 아니므로 제품 코드는 수정하지 않았다.
+- SC-41의 Task 관측 fixture를 명시적 두 버전으로 구성했다. v1은 시작조건과 원래 prompt, v2는 시작조건 없이 다른 prompt를 갖는다. 각 요청의 task_version·current_version·prompt·시작조건을 제출 당시 계약에서 정한 독립 리터럴과 대조하고, 사람 출력의 선택/현재 버전·prompt 및 버전 생략의 최신 정의 선택도 확인한다. 환경값 숨김 검증은 유지했다.
+- 별도 작업트리는 CLI 구현 `0618a19`를 기반으로 하며 SC-38·저장 실패 통합과 섞지 않았다. 원래 CLI 작업트리와 리뷰 변형은 보존했다. `scripts/verify.sh --fast` 확인 132·실패 0 통과(`/tmp/cli-version-reviewfix-fast.log`). 최종 full과 동일 변형의 전체 race 결과는 아래에 기록한다.
+- 기본 `scripts/verify.sh`는 fast 확인 132·실패 0, full 확인 172·실패 0·미구현 6으로 이 분기의 36개 구현 시나리오 모든 V가 통과했다(`/tmp/cli-version-reviewfix-full.log`). 전체 full은 남은 TODO 때문에 종료 1이다. L3 실환경은 실행하지 않았다.
+- 동일한 과거 버전 무시 변형(`version == 0 || version <= current`)을 새 보강이 포함된 별도 복사 `/tmp/todoable-cli-version-reviewfix-mutant`에서 전체 `go test -race -count=1 ./...`로 실행했다. SC-41/V-01이 v1 요청에 반환된 v2 식별자·새 prompt를 검출하여 실제 종료 1이었다(207.706s, `/tmp/cli-version-reviewfix-mutant.log`). 독립 2차 리뷰는 후속이다.
