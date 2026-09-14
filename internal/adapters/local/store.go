@@ -10,14 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/agentwiki/todoable/internal/domain"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type Store struct {
-	db  *sql.DB
-	dir string
+	db     *sql.DB
+	dir    string
+	opened time.Time
 }
 
 func Open(dir string) (*Store, error) {
@@ -50,7 +52,7 @@ func Open(dir string) (*Store, error) {
 		_ = db.Close()
 		return nil, e
 	}
-	s := &Store{db: db, dir: filepath.Dir(path)}
+	s := &Store{db: db, dir: filepath.Dir(path), opened: time.Now()}
 	if e = s.initSchedules(); e != nil {
 		_ = db.Close()
 		return nil, e

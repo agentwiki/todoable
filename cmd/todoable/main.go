@@ -17,6 +17,9 @@ func run(args []string) int {
 		dir = args[1]
 		args = args[2:]
 	}
+	if len(args) > 0 && args[0] == "resume" {
+		return resumeCommand(dir, args)
+	}
 	if len(args) > 0 && args[0] == "schedule" {
 		return scheduleCommand(dir, args)
 	}
