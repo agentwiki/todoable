@@ -219,7 +219,7 @@ func (s *Store) Complete(x domain.Execution, o domain.Outcome, next string) erro
 		switch {
 		case o.Kind == "process_unknown":
 			next = "blocked:process_unknown"
-		case strings.HasSuffix(x.Stage, "_check") || o.Kind == "exited" || o.Kind == "start_failed" || o.Kind == "not_started":
+		case strings.HasSuffix(x.Stage, "_check") || o.Kind == "exited" || o.Kind == "start_failed" || o.Kind == "not_started" || o.Kind == "budget_exhausted":
 			next = "cancelled"
 		default:
 			next = "blocked:outcome_unknown"

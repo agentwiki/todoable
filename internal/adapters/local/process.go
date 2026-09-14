@@ -22,10 +22,11 @@ import (
 
 // Runner executes one committed step using its submission snapshot.
 type Runner struct {
-	Dir       string
-	Started   func(domain.ProcessIdentity) error
-	LogBytes  int64
-	Cancelled func(string) (bool, error)
+	Dir          string
+	Started      func(domain.ProcessIdentity) error
+	LogBytes     int64
+	Cancelled    func(string) (bool, error)
+	RunRemaining func(string) (int64, error)
 }
 
 func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.Outcome, err error) {
@@ -132,6 +133,19 @@ func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.
 		if cancelled {
 			out.Kind = "not_started"
 			return out, nil
+		}
+	}
+	if step.Stage != "start_check" && r.RunRemaining != nil {
+		remaining, e := r.RunRemaining(step.StepID)
+		if e != nil {
+			return out, e
+		}
+		if remaining <= 0 {
+			out.Kind = "budget_exhausted"
+			return out, nil
+		}
+		if remaining < step.TimeoutNS {
+			step.TimeoutNS = remaining
 		}
 	}
 	if ctx.Err() != nil {

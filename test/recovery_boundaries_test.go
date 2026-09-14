@@ -533,7 +533,7 @@ func changingFailures(t *testing.T) {
 	assertRuntime(t, f, a, v, "failed:max_calls", 3, runtimeStages(3))
 }
 
-func TestReadOnlyIntentRecovery(t *testing.T) {
+func readOnlyIntentRecovery(t *testing.T) {
 	for _, stage := range []string{"start_check", "finish_check"} {
 		t.Run(stage, func(t *testing.T) {
 			f := recoveryRuntime(t)
@@ -588,7 +588,7 @@ func TestReadOnlyIntentRecovery(t *testing.T) {
 		})
 	}
 }
-func TestRecordedBlockSurvivesRestart(t *testing.T) {
+func recordedBlockSurvivesRestart(t *testing.T) {
 	f := recoveryRuntime(t)
 	a := submitCore(t, f, "runtime", "blocked", "resource", map[string]any{"label": "blocked", "signal_stage": "before"})
 	id := a["run_id"].(string)

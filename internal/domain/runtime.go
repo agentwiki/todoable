@@ -38,6 +38,9 @@ type Outcome struct {
 
 // NextStage distinguishes an observed nonzero exit from an unobserved effect.
 func NextStage(e Execution, o Outcome) string {
+	if o.Kind == "budget_exhausted" {
+		return "failed:run_timeout"
+	}
 	if o.Kind == "process_unknown" {
 		return "blocked:process_unknown"
 	}

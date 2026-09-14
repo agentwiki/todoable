@@ -148,6 +148,11 @@ func (s *Store) Resume(r domain.ResumeRequest) (map[string]any, error) {
 				return nil, err
 			}
 		}
+		// Only a confirmed blocked interval pauses an existing execution clock.
+		// Queueing for a slot after resolution is part of that same Run.
+		if _, err = tx.Exec("UPDATE run_clocks SET ticking_at=? WHERE run_id=? AND ticking_at=0", now, r.RunID); err != nil {
+			return nil, err
+		}
 		if _, err = tx.Exec("UPDATE runs SET state='waiting' WHERE id=?", r.RunID); err != nil {
 			return nil, err
 		}

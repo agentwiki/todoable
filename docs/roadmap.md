@@ -1,6 +1,6 @@
 # 남은 작업
 
-SC-01~24·26~27·32~37·39~40의 34개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소를 구현했으며 시간 예산 전체 계약은 해당 미구현 시나리오가 남아 있다.
+SC-01~24·26~27·32~40의 35개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소, 연속 Run 시간 예산과 읽기 검사 복구를 구현했다.
 
 현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task enable ID`, `task disable ID`, `run submit FILE`, `run show RUN_ID --json`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `submission cancel ID --reason TEXT [--acknowledge-effects] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 다른 명령과 schedule 외의 사람용 조회 출력은 미구현이다.
 
@@ -16,12 +16,12 @@ SC-01~24·26~27·32~37·39~40의 34개 시나리오 E2E를 구현했다. 접수 
 | E2E 통과 | 서로 다른 Task의 같은 충돌 자원 배타·결과 불명 소유 유지 | SC-08 |
 | E2E 통과 | 반복 자원 반환·ready 순서, after 실패 회차 이력·요약, 유한·무한 시작 대기와 반복 지연 | SC-10·14·15 |
 | E2E 통과 | 시작 재확인 거짓·오류의 자원 반환과 변경 단계 실패 분류 | SC-35 |
-| 부분 구현 | 연속 시간 예산·복구 예산 전체 계약 | SC-38 |
+| E2E 통과 | 연속 시간 소비·정지 확인 차단 일시정지, 재개·중단·예약 지연 예산 보존, 영 예산 해소·읽기 검사 복구 | SC-38 |
 | E2E 통과 | 간격·cron·기간 보충·원자 커서 복구·활성화 이력·포화와 오류 격리 | SC-16~19, SC-36~37 |
 | E2E 통과 | 정지 미확인 Run 슬롯 포함 전역 상한·변경 의도 강제 종료 복구 | SC-09·20 |
 | E2E 통과 | 이전 그룹 정지·PID 시작값 불일치 보호, Step별 수동 해소·감사·예산 보존 | SC-22·23 |
 | E2E 통과 | after 게시 직후 복구·결과 확인·효과 인정 취소, 취소/완료 경합·옛 소유 통지 거부 | SC-21·24·39 |
-| 부분 구현 | 연속 시간 소비와 읽기 검사 복구. 영 시간 예산 확인·종료 복구 결합 미완 | SC-38·42 |
+| 부분 구현 | 종료·저장 실패와 복구 결합 | SC-42 |
 | E2E 통과 | 출력 저장 상한·파이프 소비, 검사 timeout과 정지 미확인 검사 슬롯 유지 | SC-26 |
 | E2E 통과 | 실행 중 설정 해시 비교·재시작 실행/검사/접수/로그 상한·기존 예산 보존 | SC-40 |
 | E2E 통과 | 오래된 완료 stdout·stderr 기간/총량 정리, 진행·차단 로그와 실제 수동 감사·이력·중복 기록 보존 | SC-27 |
@@ -285,3 +285,14 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 취소/설정 통합 `28547a7`에 독립 승인된 SC-27 `5846dfc`를 병합했다. 변경은 SC-27 E2E와 검증 문서이며 제품 코드에는 추가 변경이 없다. 양쪽 이력과 현재 34개 구현 시나리오 상태를 보존했다.
 - `scripts/verify.sh`의 빠른 등급 확인 132·실패 0, full 확인 166·실패 0·미구현 8을 확인했다. 구현한 34개 시나리오 모든 V는 통과하며 나머지 TODO로 full 전체는 종료 1이다. 로그 `/tmp/cancellation-retention-integration-full.log`. L3 실환경은 실행하지 않았다.
 - SC-27 감사 삭제 변형은 독립 리뷰와 오케스트레이터의 전체 race에서 SC-27/V-01·V-02 실패로 검출했다. 오케스트레이터 로그 `/tmp/log-retention-orchestrator-current.log`. 이 병합은 기존 검증 묶음을 함께 실행하며 새로운 제품 변형은 추가하지 않았다. 취소 CLI 설정 가드의 별도 통합 리뷰는 진행 중이다.
+
+## SC-38 연속 Run 시간 예산과 검사 복구 (2026-09-14)
+
+- 최신 취소·설정·로그 정리 통합 `3ef58e3`에 보존된 시간 예산 진행분을 복원했다. 오케스트레이터는 해당 기반의 기본 full에서 fast 확인 132, full 확인 166·실패 0·TODO 8을 직접 확인했다(`/tmp/current-cancellation-retention-full.log`). 원래 작업트리와 stash는 삭제하지 않았다.
+- 수동 해소 뒤 기존 Run 시계를 즉시 재시작하여 검사·Run 슬롯 대기도 실행 예산을 소비한다. 실제 exec 직전에는 영속 잔여 시간을 다시 확인하고 만료된 예약을 외부 명령 없이 `failed:run_timeout`으로 끝낸다. 양수 잔여 시간이 예약 당시 제한보다 작으면 실제 명령 제한도 그 값으로 줄인다. 설정 로그 상한·취소 콜백을 함께 보존했다.
+- SC-38/V-01은 선행 접수·시작조건·반복 지연 제외, 단계 사이 데몬 중단의 연속 소비, 정지 확인된 차단의 시계 정지와 재개, 정지 미확인/중단 시간 소비, 예약 뒤 exec 지연과 재개 뒤 슬롯 대기를 실제 실행 기록·산출물·남은 호출/시간과 대조한다. 선행 접수 때문에 아직 runtime이 없는 Run의 null 예산을 기간으로 읽던 미완 fixture는 실행 자격 후 시작검사 gate에서 온전한 예산을 확인하도록 고쳤다.
+- V-01의 읽기 검사 복구는 살아 있는 이전 시작·종료검사를 정지한 뒤 재검사를 예약하고 변경 단계 호출을 중복하지 않는지 확인한다. 결과 저장 뒤 단계 사이 중단은 이미 끝난 명령을 다시 실행하지 않는지도 확인한다. V-02는 영 예산 retry 거부의 저장 불변, before/after 성공·실패 확인과 효과 인정 취소 허용, 새 명령 필요 시 run_timeout, 정지 미확인 검사 해소 전 실행 금지, 재시작만으로 기록된 차단을 해소하지 않는 경계를 확인한다.
+- `scripts/verify.sh --fast` 확인 132·실패 0 통과. 첫 기본 full은 확인 183·실패 0·TODO 7로 35개 구현 시나리오의 모든 V가 통과했다(`/tmp/time-budget-final-fast.log`, `/tmp/time-budget-final-full.log`). 이후 양수 잔여시간으로 실제 명령 제한을 줄이는 단정을 추가하여 targeted race도 통과했다(`/tmp/time-budget-limited-targeted.log`). 최종 전체 검증 결과는 아래에 별도로 기록한다.
+- Executor 잔여시간 콜백을 제거한 `/tmp/todoable-time-budget-exec-mutant`의 전체 `go test -race -count=1 ./...`는 SC-38/V-01/continuity/delayed-exec에서 만료된 예약이 실제 exited로 실행됨을 검출해 종료 1이었다(229.958s, `/tmp/time-budget-exec-mutant.log`). 수동 해소의 시계 재시작을 제거한 `/tmp/todoable-time-budget-resume-mutant`도 같은 전체 race에서 resume-queue가 0이어야 할 예산을 1.9493873s로 보존한 것을 검출해 종료 1이었다(229.465s, `/tmp/time-budget-resume-mutant.log`).
+- 양수 잔여시간으로 실행 제한을 줄이는 분기만 제거한 `/tmp/todoable-time-budget-limit-mutant`의 전체 race는 delayed-limited-exec가 실제 실행 2.006977337s를 관측하여 1.3s 상한 위반으로 종료 1이었다(223.569s, `/tmp/time-budget-limit-mutant.log`). 세 변형 패치는 `/tmp/time-budget-{exec,resume,limit}-mutation.patch`에 보존했다.
+- 최종 `scripts/verify.sh`는 fast 확인 132·실패 0, full 확인 184·실패 0·미구현 7로 SC-38을 포함한 35개 구현 시나리오의 모든 V가 통과했다(`/tmp/time-budget-final-full-complete.log`). 전체 full은 남은 TODO 때문에 종료 1이다. L3 실제 외부 업무·실환경 `--deep`은 이번 로컬 시간 예산 범위에서 실행하지 않았다. 독립 리뷰와 오케스트레이터의 핵심 변형 재현은 후속이다.

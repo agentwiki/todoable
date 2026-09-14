@@ -400,12 +400,13 @@ func TestScenario_SC_35(t *testing.T) {
 
 // TestScenario_SC_38: 시간 예산과 읽기 전용 검사 복구
 func TestScenario_SC_38(t *testing.T) {
-	todo(t, "SC-38")
 	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-38")
+		t.Run("continuity", timeBudgetContinuity)
+		t.Run("read-only-recovery", readOnlyIntentRecovery)
 	})
 	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-38")
+		t.Run("exhaustion", timeBudgetExhaustion)
+		t.Run("recorded-block", recordedBlockSurvivesRestart)
 	})
 }
 
