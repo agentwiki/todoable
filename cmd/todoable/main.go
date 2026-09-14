@@ -17,6 +17,9 @@ func run(args []string) int {
 		dir = args[1]
 		args = args[2:]
 	}
+	if len(args) > 1 && args[0] == "submission" && args[1] == "cancel" {
+		return cancelCommand(dir, args)
+	}
 	if len(args) > 0 && args[0] == "resume" {
 		return resumeCommand(dir, args)
 	}
@@ -126,6 +129,14 @@ func daemon(dir string) int {
 					d.Stop()
 					return
 				}
+			}
+			if e := store.ReconcileCancellations(d.Context()); e != nil {
+				if d.Stopped(e) {
+					return
+				}
+				errors <- e
+				d.Stop()
+				return
 			}
 			if e := usecases.PublishSchedules(store); e != nil {
 				errors <- e

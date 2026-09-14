@@ -83,7 +83,7 @@ func (d *Daemon) Stopped(err error) bool {
 	return errors.Is(err, context.Canceled) || d.context.Err() != nil
 }
 func (s *Store) Executor() *Runner {
-	return &Runner{Dir: s.dir, Started: s.Started, LogBytes: s.config.StepLogBytes}
+	return &Runner{Dir: s.dir, Started: s.Started, LogBytes: s.config.StepLogBytes, Cancelled: s.CancellationRequested}
 }
 
 func (d *Daemon) Stop() { d.stop() }

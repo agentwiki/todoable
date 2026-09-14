@@ -1,8 +1,8 @@
 # 남은 작업
 
-SC-01~20·22~23·26·32~37·40의 30개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소를 구현했으며 취소와 시간 예산 전체 계약은 해당 미구현 시나리오가 남아 있다.
+SC-01~24·26·32~37·39~40의 33개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소를 구현했으며 시간 예산 전체 계약은 해당 미구현 시나리오가 남아 있다.
 
-현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task enable ID`, `task disable ID`, `run submit FILE`, `run show RUN_ID --json`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 다른 명령과 schedule 외의 사람용 조회 출력은 미구현이다.
+현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task enable ID`, `task disable ID`, `run submit FILE`, `run show RUN_ID --json`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `submission cancel ID --reason TEXT [--acknowledge-effects] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 다른 명령과 schedule 외의 사람용 조회 출력은 미구현이다.
 
 | 상태 | 작업 | 관련 시나리오 |
 | --- | --- | --- |
@@ -20,7 +20,8 @@ SC-01~20·22~23·26·32~37·40의 30개 시나리오 E2E를 구현했다. 접수
 | E2E 통과 | 간격·cron·기간 보충·원자 커서 복구·활성화 이력·포화와 오류 격리 | SC-16~19, SC-36~37 |
 | E2E 통과 | 정지 미확인 Run 슬롯 포함 전역 상한·변경 의도 강제 종료 복구 | SC-09·20 |
 | E2E 통과 | 이전 그룹 정지·PID 시작값 불일치 보호, Step별 수동 해소·감사·예산 보존 | SC-22·23 |
-| 부분 구현 | 연속 시간 소비와 읽기 검사 복구. 취소·영 시간 예산 확인 결합 미완 | SC-21·24, SC-38~39, SC-42 |
+| E2E 통과 | after 게시 직후 복구·결과 확인·효과 인정 취소, 취소/완료 경합·옛 소유 통지 거부 | SC-21·24·39 |
+| 부분 구현 | 연속 시간 소비와 읽기 검사 복구. 영 시간 예산 확인·종료 복구 결합 미완 | SC-38·42 |
 | E2E 통과 | 출력 저장 상한·파이프 소비, 검사 timeout과 정지 미확인 검사 슬롯 유지 | SC-26 |
 | E2E 통과 | 실행 중 설정 해시 비교·재시작 실행/검사/접수/로그 상한·기존 예산 보존 | SC-40 |
 | 부분 구현 | 완료 stdout·stderr의 기간/총량 정리. 진행·차단·전체 보존 계약 E2E는 후속 | SC-27 |
@@ -28,7 +29,7 @@ SC-01~20·22~23·26·32~37·40의 30개 시나리오 E2E를 구현했다. 접수
 | 부분 구현 | JSON 오류와 접수·Run 조회. 나머지 CLI·데몬 경계 | SC-41 |
 | 미구현 | 실제 이슈 수정·자료 변환·기간 리포트 | SC-28~30 |
 
-YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이 제한과 설치 cap을 적용한다. 신규 접수는 선택한 현재·과거 Task 버전을 현 cap으로 검증하고, 기존 접수의 재전송은 같은 접수로 돌려준다. 실행 중 데몬과 CLI의 설정 해시가 다르면 조회만 허용하고 변경 명령은 재시작을 요구한다. 재시작한 데몬은 실행·검사·로그 관리의 현 상한을 사용하며 기존 접수의 스냅샷·예산은 유지한다. 일정 정의·활성화·비활성화·기간 수동 접수는 구현했으나 취소·Task 조회는 SC-31의 미완 항목이다. 접수 환경 스냅샷을 실제 실행에 전달하는 계약은 SC-34에서 확인했다.
+YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이 제한과 설치 cap을 적용한다. 신규 접수는 선택한 현재·과거 Task 버전을 현 cap으로 검증하고, 기존 접수의 재전송은 같은 접수로 돌려준다. 실행 중 데몬과 CLI의 설정 해시가 다르면 조회만 허용하고 변경 명령은 재시작을 요구한다. 재시작한 데몬은 실행·검사·로그 관리의 현 상한을 사용하며 기존 접수의 스냅샷·예산은 유지한다. 일정 정의·활성화·비활성화·기간 수동 접수는 구현했으나 Task 전체 취소·조회는 SC-31의 미완 항목이다. 접수 환경 스냅샷을 실제 실행에 전달하는 계약은 SC-34에서 확인했다.
 
 ## 검증 기록 (2026-09-11)
 
@@ -229,3 +230,38 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - fast 확인 132·실패 0, full 확인 142·실패 0·미구현 12로 구현 30개 시나리오의 모든 V를 확인했다. 로그 `/tmp/manual-config-runtime-integration-fast.log`, `/tmp/manual-config-runtime-integration-full.log`. 남은 TODO로 full 전체는 실패다. SC-27의 실제 감사 보존 전체 계약은 아직 미구현이며 이 통합만으로 완료로 바꾸지 않았다.
 - 별도 복사 `/tmp/todoable-manual-config-resume-mutation`에서 resume의 설정 가드만 제거한 뒤 전체 `go test -race -count=1 ./...`를 실행했다. SC-40/V-01이 설정 불일치 대신 실제 수동 해소 경계의 invalid_state까지 진행한 응답을 검출하여 종료 1로 실패했다(`/tmp/manual-config-runtime-resume-mutation.log`). 두 오류가 모두 코드 6이므로 오류 종류까지 대조한다.
 - 별도 리뷰 중인 testreport `9d77279` 및 취소 진행분은 이 제품 통합에 넣지 않았다. 취소 명령의 설정 가드는 해당 기능을 통합할 때 추가해야 한다. 실환경 L3는 이번 로컬 통합 검증에 포함하지 않았다.
+
+
+## 결과 불명 취소·후처리 효과·완료 경합 (2026-09-14)
+
+- SC-21은 after가 목적지 게시를 마친 직후 결과 저장 전에 실제 데몬을 종료한다. 재시작 후 자동 게시 재실행과 동일 자원 인계가 없는지 확인하며, 사용자 성공 확인과 효과 인정 취소 각각에서 게시 한 번·원래 호출 예산·후속 자원 진행을 대조한다.
+- 접수 취소 요청과 잔여 반복 중단은 먼저 원자적으로 저장한다. 실행기는 exec 직전과 실행 중 취소를 확인하여 시작을 막거나 그룹 정지를 시도한다. 정지된 변경 결과가 불명이면 blocked와 cancel_requested를 유지하고 retry를 거부하며, 사용자 결과 확인 또는 정지 확인을 동반한 효과 인정 뒤에만 cancelled로 자원을 반환한다. 관측 결과와 사용자 선언·효과 인정·사유 감사는 분리한다.
+- SC-24는 실제 예약·외부 실행을 수행한 뒤 완료 통지 전달만 보류하여 취소/완료 트랜잭션 양쪽 순서를 만든다. 완료가 먼저 만든 후속 회차도 취소하고, 취소 직전 커밋된 미실행 예약은 실제 실행기에서 시작하지 않으며 실행 중 agent는 정지 후 결과 불명으로 남는다. result=NULL인 예약의 소유 버전·단계·상태 변경을 별도 SQL로 주입한 통지는 진단만 기록하고 전체 실행 상태·Step·호출/시간/반복 예산·자원·슬롯을 보존한다. 이 주입은 옛 소유 통지 경계를 검증하며 공개 데몬 경합 검증을 대신하지 않는다.
+- SC-39는 결과 불명 취소 진행 중 retry·after·반복 실행 금지와 결과 확인/효과 인정 두 해소 방법을 대조한다. 그룹을 탈출해 출력 파이프를 유지하는 실행기는 정지 증거를 별도로 알 수 없다고 기록한다. 효과 인정만으로 슬롯·자원을 반환하지 않고, 실제 정리 뒤 사용자 정지 선언과 감사가 있어야 해소됨을 확인한다.
+- `scripts/verify.sh --fast` 확인 122 통과. 기본 full은 확인 159·실패 0·TODO 10이며 구현 32개 시나리오의 모든 V를 실제 통과했다. 남은 TODO 때문에 full 전체는 종료 1이다. 로그 `/tmp/cancellation-fast-final.log`, `/tmp/cancellation-full-final.log`. SC-38 전체 시간 예산, Task 전체 취소와 남은 CLI/종료 복구, 저장 실패·로그 관리 및 L3는 이번 묶음에 포함하지 않는다.
+
+- 효과 인정의 정지 전제를 제거한 `/tmp/todoable-cancellation-stop-fss403bo`에서 전체 `go test -race -count=1 ./...`가 SC-39/V-02 실패로 종료 1을 반환했다. 정지 미확인인데 cancelled·effects_unknown으로 자원을 넘긴 것을 검출했다. 로그 `/tmp/cancellation-stop-mutation.log`; 오케스트레이터도 같은 전체 race 실패를 `/tmp/cancellation-stop-orchestrator.log`에서 재현했다.
+- 옛 Step 소유 버전 가드를 제거한 `/tmp/todoable-cancellation-owner-4zxgujvs`는 같은 전체 race에서 SC-24/V-02/owner가 결과 NULL 변경·슬롯/자원 반환·cancelled 덮어쓰기를 검출하여 실패했다. 로그 `/tmp/cancellation-owner-mutation.log`.
+- 실행기의 취소 확인 콜백을 연결하지 않은 `/tmp/todoable-cancellation-runner-0i91rbkh`도 전체 race에서 SC-24/V-02/before-exec와 active가 실패한다. 취소된 예약이 not_started 대신 실제 exited로 실행되고, 실행 중 명령이 중단되지 않았다. 로그 `/tmp/cancellation-runner-mutation.log`. 세 변형은 원본에 적용하지 않았으며 패치는 `/tmp/cancellation-{stop,owner,runner}-mutation.patch`에 보존했다.
+- 변형 이후 원본에는 취소된 agent의 외부 진입도 정확히 한 번이어야 한다는 단정을 더해 저장 호출만으로 재실행을 놓치지 않도록 했다. 최종 full을 다시 실행하여 확인 159·실패 0·TODO 10을 확인했다. SC-38 후속에서는 수동 해소 후 슬롯 대기 중 시간 소비와 예약 후 실제 exec까지 지연된 경우 시작 직전 잔여 예산 재확인을 추가로 구현·검증한다.
+
+## 사용자 요청에 따른 취소 검증 중단 체크포인트 (2026-09-14)
+
+- 사용자가 안정적인 지점에서 중단을 요청했다. 취소 구현 `303cc62`는 full 확인 159·실패 0·TODO 10을 기록했지만 독립 1차 리뷰는 비동기 취소 배선 검증 공백으로 승인을 보류했다. 이 구현과 아래 보강은 승인된 main에 통합하지 않는다.
+- 리뷰어는 ReconcileCancellations 전체를 무동작으로 만들어도 기존 전체 race가 통과함을 확인했다. 실행 중인 agent에 효과 인정 취소를 한 번만 요청하면 정지 후 두 번째 Cancel/resume 없이 비동기로 cancelled까지 도달해야 하는데 기존 테스트는 추가 수동 행동으로 이 경로를 대신했다. 로그 `/tmp/todoable-review-cancel-reconcile.log`, 진단 `/tmp/todoable-review-cancel-active-{original,mutant}.log`.
+- 진행 중 보강은 외부 agent가 효과를 기록한 뒤 TERM을 받아도 외부 gate가 열릴 때까지 살아 있도록 한다. 단 한 번의 CLI 취소 요청, 정지 전 running·예약·자원 유지, gate 해제 후 비동기 완료, 원래 효과·감사 1건·호출 1회 보존, 후속 회차/after 금지 및 자원/슬롯 반환을 확인한다. 제품 변경 없이 SC-24/V-02에 추가했다.
+- 보강 targeted `go test -race -count=1 ./test -run '^TestScenario_SC_24$/V-02/single-acknowledgement'`만 실제 통과했다(2.177s, `/tmp/cancellation-reviewfix-targeted.log`). 보강 후 fast/full 및 무동작 변형 전체 race는 아직 실행하지 않았다. 재개 최우선은 이 보강의 fast/full·변형 검출을 완료하고 1차 수정 커밋을 고정하여 독립 2차 리뷰를 받는 것이다. 중단 뒤 새 검증이나 변형은 시작하지 않았다.
+
+## 취소 비동기 해소 1차 리뷰 보강 재개 (2026-09-14)
+
+- 보존된 단일 효과 인정 취소 E2E를 복원했다. 취소 요청 한 번 뒤 실제 프로세스 정지 전에는 자원·슬롯·예약을 유지하고 정지 후에는 추가 CLI 요청 없이 데몬이 cancelled로 해소하는지 확인한다. 외부 효과 1회·호출 1회·감사 1건을 보존하며 after·후속 회차·숨은 산출물 실행도 배제한다.
+- `scripts/verify.sh --fast` 확인 122·실패 0 통과. 기본 full 확인 160·실패 0·미구현 10으로 32개 구현 시나리오의 모든 V가 통과했다. full 전체는 남은 TODO 때문에 종료 1이며 L3 실환경은 실행하지 않았다. 로그 `/tmp/cancellation-resumed-fast.log`, `/tmp/cancellation-resumed-full.log`.
+- 비동기 `ReconcileCancellations`를 무동작으로 만든 별도 복사 `/tmp/todoable-cancellation-resumed-mutant`의 전체 `go test -race -count=1 ./...`는 SC-24/V-02/single-acknowledgement에서 취소 완료 미도달을 검출하여 종료 1이었다(159.480s). 로그 `/tmp/cancellation-resumed-mutant.log`; 패치는 `/tmp/todoable-review-cancel-reconcile.patch`다. 독립 2차 리뷰 승인은 아직 받지 않았다.
+
+## 설정 상한·취소 통합 검증 (2026-09-14)
+
+- 독립 2차 리뷰가 승인한 취소 `9684a55`를 설정 실행 상한·수동 해소 통합 `fd189df`에 병합했다. 유지보수 루프는 완료 로그 정리와 취소 비동기 해소를 모두 실행하며 Runner는 현재 설정 로그 상한과 취소 확인 콜백을 함께 사용한다. 설정 해시 게시 잠금과 설치 cap·수동 해소 배선을 유지했다.
+- 신규 취소 CLI에도 `CheckCLIConfig`를 연결하고 SC-40에 설정 불일치 취소 거부를 추가했다. 요청 뒤 접수·예산·정의·실행 기록과 수동 해소 감사뿐 아니라 취소 요청·취소 감사도 그대로인지 확인한다.
+- 독립 취소 리뷰가 비동기 해소 무동작과 정지 증거 우회 두 변형을 전체 race에서 검출했다. 오케스트레이터는 비동기 해소 무동작의 전체 race 실패를 다시 재현했다(SC-24/V-02/single-acknowledgement, 174.190s, `/tmp/cancellation-current-orchestrator.log`).
+- 통합 `scripts/verify.sh --fast` 확인 132·실패 0 통과. 기본 full 확인 163·실패 0·미구현 9로 33개 구현 시나리오의 모든 V가 통과했다. 전체 full은 TODO 때문에 종료 1이며 실환경 L3는 실행하지 않았다. 로그 `/tmp/cancellation-integration-fast.log`, `/tmp/cancellation-integration-full.log`.
+- 취소 CLI의 설정 비교만 제거한 별도 복사 `/tmp/todoable-cancel-config-mutant`의 전체 `go test -race -count=1 ./...`는 SC-40/V-01에서 요청이 코드 0으로 접수되는 것을 검출해 종료 1이었다(178.168s). 로그 `/tmp/cancellation-integration-config-mutant.log`. 이 통합 배선의 독립 리뷰는 별도로 필요하다.

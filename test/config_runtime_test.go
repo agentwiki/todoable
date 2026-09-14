@@ -103,14 +103,14 @@ func configRuntimeChange(t *testing.T) {
 	writeTest(t, cfg, []byte(newConfig), 0600)
 	f.call(t, "run", "show", a["run_id"].(string), "--json")
 	f.call(t, "schedule", "show", "runtime", "--json")
-	for _, args := range [][]string{{"task", "register", f.manifest}, {"task", "update", f.manifest, "--if-version", "3"}, {"task", "enable", "runtime"}, {"task", "disable", "runtime"}, {"run", "submit", filepath.Join(f.root, "core-input.json")}, {"schedule", "enable", "runtime"}, {"schedule", "disable", "runtime"}, {"schedule", "submit", "runtime", "--at", "2026-09-14T00:00:00Z"}, {"resume", a["run_id"].(string), "--step", activeStep, "--action", "confirm-success", "--reason", "configuration mismatch must not resolve work"}} {
+	for _, args := range [][]string{{"task", "register", f.manifest}, {"task", "update", f.manifest, "--if-version", "3"}, {"task", "enable", "runtime"}, {"task", "disable", "runtime"}, {"run", "submit", filepath.Join(f.root, "core-input.json")}, {"schedule", "enable", "runtime"}, {"schedule", "disable", "runtime"}, {"schedule", "submit", "runtime", "--at", "2026-09-14T00:00:00Z"}, {"resume", a["run_id"].(string), "--step", activeStep, "--action", "confirm-success", "--reason", "configuration mismatch must not resolve work"}, {"submission", "cancel", a["submission_id"].(string), "--reason", "configuration mismatch must not cancel work", "--acknowledge-effects"}} {
 		f.rejected(t, 6, "config_mismatch", args...)
 	}
 	if f.durableAdmission(t) != before || parsingDefinitions(t, f.intakeFixture) != definitions {
 		t.Fatal("mismatched CLI changed durable work")
 	}
-	if configCount(t, f, "SELECT count(*) FROM step_resolutions") != 0 || fmt.Sprint(orderEvents(t, f)) != eventsBefore {
-		t.Fatal("mismatched resume changed audit or executed external work")
+	if configCount(t, f, "SELECT count(*) FROM cancellation_audit") != 0 || configCount(t, f, "SELECT count(*) FROM cancel_requests") != 0 || configCount(t, f, "SELECT count(*) FROM step_resolutions") != 0 || fmt.Sprint(orderEvents(t, f)) != eventsBefore {
+		t.Fatal("mismatched resume/cancel changed audit or executed external work")
 	}
 	writeTest(t, gate, nil, 0600)
 	for _, item := range []map[string]any{a, b} {

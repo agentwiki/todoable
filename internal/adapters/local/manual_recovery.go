@@ -14,6 +14,7 @@ type blockedStep struct {
 	owner     domain.ProcessIdentity
 	result    domain.Outcome
 	remaining int64
+	confirmed bool
 }
 
 func loadBlocked(tx *sql.Tx, r domain.ResumeRequest) (blockedStep, error) {
@@ -21,9 +22,9 @@ func loadBlocked(tx *sql.Tx, r domain.ResumeRequest) (blockedStep, error) {
 	var snapshot, result string
 	x := &b.execution
 	p := &b.owner
-	err := tx.QueryRow(`SELECT st.id,st.run_id,r.submission_id,r.run_seq,st.stage,r.calls_used,rt.phase,s.snapshot,coalesce(st.result,'{}'),coalesce(st.pid,0),coalesce(st.pgid,0),coalesce(st.boot_id,''),coalesce(st.process_start,''),rt.remaining_ns
+	err := tx.QueryRow(`SELECT st.id,st.run_id,r.submission_id,r.run_seq,st.stage,r.calls_used,rt.phase,s.snapshot,coalesce(st.result,'{}'),coalesce(st.pid,0),coalesce(st.pgid,0),coalesce(st.boot_id,''),coalesce(st.process_start,''),rt.remaining_ns,EXISTS(SELECT 1 FROM stop_confirmations WHERE step_id=st.id)
  FROM steps st JOIN runs r ON r.id=st.run_id JOIN runtime rt ON rt.run_id=r.id JOIN submissions s ON s.id=r.submission_id
- WHERE r.id=? AND st.id=? AND r.state='blocked' AND st.seq=(SELECT max(seq) FROM steps WHERE run_id=r.id)`, r.RunID, r.StepID).Scan(&x.StepID, &x.RunID, &x.SubmissionID, &x.RunSeq, &x.Stage, &x.CallIndex, &x.Phase, &snapshot, &result, &p.PID, &p.PGID, &p.BootID, &p.ProcessStart, &b.remaining)
+ WHERE r.id=? AND st.id=? AND r.state='blocked' AND st.seq=(SELECT max(seq) FROM steps WHERE run_id=r.id)`, r.RunID, r.StepID).Scan(&x.StepID, &x.RunID, &x.SubmissionID, &x.RunSeq, &x.Stage, &x.CallIndex, &x.Phase, &snapshot, &result, &p.PID, &p.PGID, &p.BootID, &p.ProcessStart, &b.remaining, &b.confirmed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return b, &domain.Fault{Code: 6, Kind: "invalid_state", Message: "resume requires the current blocked Step"}
 	}
@@ -38,8 +39,11 @@ func loadBlocked(tx *sql.Tx, r domain.ResumeRequest) (blockedStep, error) {
 	return b, err
 }
 func stoppedEvidence(b blockedStep, declared bool) bool {
-	if declared {
+	if declared || b.confirmed {
 		return true
+	}
+	if b.result.Untracked {
+		return false
 	}
 	switch b.result.Kind {
 	case "exited", "unknown", "interrupted", "start_failed", "not_started":
@@ -61,6 +65,13 @@ func (s *Store) Resume(r domain.ResumeRequest) (map[string]any, error) {
 	b, err := loadBlocked(tx, r)
 	if err != nil {
 		return nil, err
+	}
+	cancelled, err := cancelledSubmission(tx, b.execution.SubmissionID)
+	if err != nil {
+		return nil, err
+	}
+	if cancelled && r.Action == "retry" {
+		return nil, &domain.Fault{Code: 6, Kind: "cancel_requested", Message: "cancelled submissions cannot retry"}
 	}
 	check := strings.HasSuffix(b.execution.Stage, "_check")
 	if check && r.Action != "retry" {
@@ -100,7 +111,10 @@ func (s *Store) Resume(r domain.ResumeRequest) (map[string]any, error) {
 	if _, err = tx.Exec("UPDATE steps SET result=coalesce(result,'{\"kind\":\"unobserved\",\"exit_code\":-1}') WHERE id=?", r.StepID); err != nil {
 		return nil, err
 	}
-	terminal := next == "succeeded" || strings.HasPrefix(next, "failed:")
+	if cancelled {
+		next = "cancelled"
+	}
+	terminal := next == "cancelled" || next == "succeeded" || strings.HasPrefix(next, "failed:")
 	if !terminal && b.remaining <= 0 {
 		next = "failed:run_timeout"
 		terminal = true
@@ -165,5 +179,9 @@ func (s *Store) resolutionView(id string, out map[string]any) (map[string]any, e
 		records = append(records, map[string]any{"step_id": step, "action": action, "exit_code": exit, "reason": reason, "processes_stopped": declared, "created_at": at, "manual": true})
 	}
 	out["resolutions"] = records
-	return out, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	_ = rows.Close()
+	return s.cancellationView(id, out)
 }
