@@ -310,17 +310,6 @@ func TestScenario_SC_28(t *testing.T) {
 	})
 }
 
-// TestScenario_SC_29: 독립 자료 여러 개 변환 실사용
-func TestScenario_SC_29(t *testing.T) {
-	todo(t, "SC-29")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-29")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-29")
-	})
-}
-
 // TestScenario_SC_30: 기간별 리포트와 외부 게시 실사용
 func TestScenario_SC_30(t *testing.T) {
 	todo(t, "SC-30")

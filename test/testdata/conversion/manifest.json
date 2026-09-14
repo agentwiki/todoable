@@ -1,0 +1,30 @@
+{
+  "converter": "ImageMagick 7.1.1-43 Q16",
+  "decoder": "Pillow 11.1.0",
+  "sources": [
+    {
+      "origin": "/usr/share/gitweb/static/git-logo.png",
+      "source": "git-logo.png",
+      "sha256": "ecc07dc6faa45d6368fa2867483636e6b2579f1eeac1a9fb174bd9388d982714",
+      "width": 72,
+      "height": 27,
+      "rgba_sha256": "b7822ba018c0f77b1ee7d56dcce7a1f2403d808ed4b43cf79bf93f6a5dde0754"
+    },
+    {
+      "origin": "/usr/share/pixmaps/htop.png",
+      "source": "htop.png",
+      "sha256": "65e7341bc21f907b64c71f813b41510ba4f3d20494878d6d96db23f13f47607a",
+      "width": 128,
+      "height": 128,
+      "rgba_sha256": "d1b350b421dc52bdb6c68aa8e3f6e8f77a026d56abb52f2966a20480c15c6ecf"
+    },
+    {
+      "origin": "/usr/share/doc/libpng-dev/examples/pngtest.png",
+      "source": "pngtest.png",
+      "sha256": "b1bea5bdef79b65134ba3f3d5805e79e84861c9187c7c7a3e20348431b85f143",
+      "width": 91,
+      "height": 69,
+      "rgba_sha256": "a8adc4b0c6c6b43eb25aedcf8124c96a4b177d29e7b5ef1e8912629ae245b6bc"
+    }
+  ]
+}
