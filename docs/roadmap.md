@@ -158,3 +158,11 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 독립 리뷰가 승인한 복구 `b59acae`와 설정 파서 `c6e0a5f`·리뷰 보강 `8c453c0`을 병합했다. 충돌은 이 문서의 추가 기록 한 곳이며 양쪽 검증 이력을 모두 보존했다. 제품 코드와 시나리오 테스트는 충돌 없이 합쳐졌고 실행 의도 복구·미확인 슬롯과 설치 cap·정규화 크기 계약을 함께 검증했다.
 - 별도 통합 작업트리 `/tmp/todoable-config-recovery`에서 `scripts/verify.sh --fast` 확인 122·실패 0, 기본 `scripts/verify.sh` 확인 111·실패 0·미구현 15를 실제 확인했다. 구현 27개 시나리오의 모든 V가 통과했으며 남은 15개 `SCENARIO_TODO` 때문에 full 전체 결과는 실패다. 로그: `/tmp/config-recovery-integration-fast.log`, `/tmp/config-recovery-integration-full.log`.
 - SC-40의 설정 해시·재시작 상한 배선 진행분은 별도 stash에 보존하여 이번 통합에 포함하지 않았다. 수동 해소·취소·전체 시간 예산, 저장 실패·완료 로그 정리, 남은 CLI·백업과 L3 실제 업무 검증도 해당 시나리오 TODO로 유지한다. 이번 통합은 새 외부 환경 작업을 실행하거나 L3를 로컬 테스트로 대체하지 않았다.
+
+## 독립 충돌 키 검증의 ready 순서 경합 수정 (2026-09-14)
+
+- 전체 검증 중 SC-09/V-02가 일시 실패했다. 그 최초 실패의 상세 원인은 보존된 testreport 출력만으로 단정하지 않는다. 별도 독립 재현에서는 free-0의 시작검사를 200ms 늦추자 free-1이 먼저 ready가 되었는데, 테스트가 free-0의 진입을 기다리면서 free-1의 gate를 열지 않아 교착하는 검증 경합을 확인했다. 제품의 ready 순서는 정상이다.
+- SC-09는 제출 순서 대신 실제 before에 진입한 free Run 집합이 가용 슬롯 수에 도달하는지 관측한다. 모든 gate를 해제한 뒤 각 Run 완료와 외부 산출물을 확인하고, 전체 before/after_done 이벤트의 동시 구간 수가 정지 미확인 슬롯을 포함한 상한 2를 넘지 않는지 추가로 대조한다. 병렬성·같은 자원 대기·정지 미확인 슬롯 유지 단정은 유지했다.
+- `scripts/verify.sh --fast` 확인 122 통과. 기본 full은 확인 111·실패 0·TODO 15이며 현재 27개 구현 시나리오의 모든 V가 통과한다. 로그 `/tmp/sc09-order-fast.log`, `/tmp/sc09-order-full.log`; 전체 full은 남은 TODO로 실패한다.
+- free-0 시작검사에 200ms 지연만 추가한 `/tmp/todoable-sc09-delayed-5qani39g` 별도 복사에서 전체 `go test -race -count=1 ./...`가 종료 0으로 통과했다(로그 `/tmp/sc09-order-delayed.log`). 병렬 순서 교란을 허용하는지 확인한 것이며 TODO 시나리오의 제품 완료를 뜻하지 않는다.
+- 전역 Run 예약 상한을 2에서 3으로 올린 `/tmp/todoable-sc09-overcap-hrlj05o6` 변형은 같은 전체 race 실행에서 SC-09/V-01이 실제 구간 3 대 허용 2, V-02가 2 대 허용 1을 검출해 실패한다. SC-20/V-02의 no-PID 슬롯 검증도 함께 실패했다. 로그 `/tmp/sc09-order-overcap.log`, 실제 종료 1. 제품 코드는 원 worktree에서 변경하지 않았다.
