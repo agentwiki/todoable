@@ -193,3 +193,10 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 별도 통합 작업트리 `/tmp/todoable-manual-integration`에서 `scripts/verify.sh --fast` 확인 122·실패 0, 기본 full 확인 139·실패 0·미구현 13을 실제 확인했다. 구현 29개 시나리오의 모든 V가 통과하며 남은 13개 `SCENARIO_TODO` 때문에 full 전체 결과는 실패다. 로그 `/tmp/manual-integration-fast.log`, `/tmp/manual-integration-full.log`.
 - 수동 해소 2차 독립 리뷰와 오케스트레이터가 결과 확인의 정지 전제 우회 변형을 전체 race에서 SC-22 실패로 재현했다(`/tmp/manual-reviewfix-orchestrator.log`). 실제 다음 검사 슬롯 판정과 성공·실패 확인의 정지 전제 보강이 승인되었다. 이번 병합은 승인된 두 분기의 결합이며 새 제품 행동이나 별도 무력화 변형을 추가하지 않았다.
 - 취소 진행분은 별도 작업트리에 보존하고 이번 병합에서 제외했다. SC-21·24·38·39, 저장 실패·감사 로그 정리, SC-40 설정 변경, 나머지 CLI·복구 및 L3 실제 업무 검증은 해당 TODO를 유지한다. L3 외부 환경 검증은 이번 통합에서 실행하지 않았다.
+
+## testreport 실패 진단 보존 (2026-09-14)
+
+- SC-06·36 진단 중 기존 testreport가 `Output`을 skip 사유에만 사용해 실패의 파일·행과 원시 오류를 버리는 문제를 확인했다. 이제 실패·미완료 테스트 및 실패 패키지는 이름 아래 원본 출력 조각을 순서대로 보존한다. 모든 패키지 실패를 테스트 밖 실패라고 단정하던 문구는 원인 중립적인 패키지 실패 표시로 바꿨다. TODO·환경 skip·시나리오 관측 및 종료 코드 판정은 변경하지 않았다.
+- 도구 자기검증에서 실제 임시 Go 모듈의 하위 단정 실패, panic 스택, data race, TestMain의 종료 2와 정상 패키지를 함께 실행해 파일·행·여러 줄 진단과 패키지 귀속을 확인한다. 별도 이벤트 스트림은 미완료 테스트의 분할 출력·마지막 개행 부재·같은 테스트 이름의 다른 패키지 귀속을 대조한다. 실제 Go 버전은 TestMain 실패에 항상 `exit status 2` 문자열을 내지 않으므로 실제 발생한 명시 진단과 패키지 fail을 검사한다.
+- 제품 게이트보다 먼저 `go test -race -count=1 ./tools/testreport`를 실제 통과했다(`/tmp/testreport-diagnostics-self.log`). fast 확인 124·실패 0, full 확인 139·실패 0·미구현 13이며 승인된 main `8214fa0`의 구현 29개 시나리오를 유지한다. 로그 `/tmp/testreport-diagnostics-fast.log`, `/tmp/testreport-diagnostics-full.log`. SC-40 제품 변경은 이 도구 분기에 포함하지 않았고 남은 TODO 때문에 full 전체는 실패다.
+- 별도 복사 `/tmp/todoable-testreport-output-mutation`에서 원문 출력 한 줄을 무력화한 뒤 전체 `go test -race -count=1 ./...`를 실행했다. 종료 1이며 새 미완료 출력·실제 Go 실패 진단 자기검증이 모두 누락을 검출한다(`/tmp/testreport-diagnostics-mutation.log`). 선택적 원시 로그 디렉터리·tee 및 실환경 L3는 이번 진단 손실 수정에 필요하지 않아 추가하거나 실행하지 않았다.
