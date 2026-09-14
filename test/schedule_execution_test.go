@@ -534,6 +534,7 @@ func TestScenario_SC_36(t *testing.T) {
 			f.assertReport(t, result["run_id"].(string), period[0], period[1], []string{})
 		}
 		f.rejected(t, 2, "validation_error", "schedule", "submit", "valid1", "--at", "2026-09-02T00:00:00Z")
+		t.Run("wildcard-and-eight-year-boundaries", cronDateBoundaries)
 	})
 	verify(t, "V-02", func(t *testing.T) {
 		f.daemon(t)

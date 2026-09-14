@@ -240,6 +240,7 @@ func signalAndBackup(t *testing.T) {
 	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
 		t.Run(sig.String(), func(t *testing.T) {
 			f := orderFixture(t, 0, "0s", "0s")
+			installSignalObserver(t, f)
 			a := submitOrder(t, f, map[string]any{"label": "done"}, "done")
 			stop := storageDaemon(t, f)
 			if got := f.await(t, a["run_id"].(string)); got["state"] != "succeeded" {
@@ -254,8 +255,9 @@ func signalAndBackup(t *testing.T) {
 				t.Fatalf("audit recovery %v", got)
 			}
 			gate := filepath.Join(f.root, "release")
-			b := submitOrder(t, f, map[string]any{"label": "interrupted", "before_gate": gate}, "interrupted")
+			b := submitOrder(t, f, map[string]any{"label": "interrupted", "before_gate": gate, "signal_observer": true}, "interrupted")
 			waitExternal(t, f, "interrupted", "before", 1)
+			assertSignalStopped := awaitSignalObserver(t, f, b["run_id"].(string))
 			c := submitOrder(t, f, map[string]any{"label": "queued"}, "queued")
 			// Preserve the observations made before shutdown. Comparing a backup only
 			// to the post-shutdown database cannot detect corruption during shutdown.
@@ -268,7 +270,25 @@ func signalAndBackup(t *testing.T) {
 				}
 				completedBeforeSignal[id] = view
 			}
+			// Drain the queued read-only check before the signal. Both Runs are now
+			// stable: one command waits on its gate and the other waits for its resource.
+			waitUntil(t, func() bool {
+				return f.call(t, "run", "show", c["run_id"].(string), "--json")["stage"] == "ready"
+			})
+			eventsBeforeSignal := orderEvents(t, f)
+			var stepsBeforeSignal int
+			if err := f.database(t).QueryRow("SELECT count(*) FROM steps").Scan(&stepsBeforeSignal); err != nil {
+				t.Fatal(err)
+			}
 			stop(sig)
+			assertSignalStopped()
+			if events := orderEvents(t, f); !reflect.DeepEqual(events, eventsBeforeSignal) {
+				t.Fatalf("external command started after signal: before=%v after=%v", eventsBeforeSignal, events)
+			}
+			var stepsAfterSignal int
+			if err := f.database(t).QueryRow("SELECT count(*) FROM steps").Scan(&stepsAfterSignal); err != nil || stepsAfterSignal != stepsBeforeSignal {
+				t.Fatalf("new intent after signal: before=%d after=%d err=%v", stepsBeforeSignal, stepsAfterSignal, err)
+			}
 			assertCompletedPreserved(t, f, completedBeforeSignal)
 			observed := f.call(t, "run", "show", b["run_id"].(string), "--json")
 			if observed["stage"] != "blocked:outcome_unknown" || observed["cancel_requested"] != false {
@@ -374,6 +394,7 @@ func assertDatabaseBackup(t *testing.T, a, b *sql.DB) {
 }
 
 func storageTransactionBoundaries(t *testing.T) {
+	t.Run("actual-cli-daemon-connection-pragmas", sqliteCLIDurability)
 	f := orderFixture(t, 0, "0s", "0s")
 	gate := filepath.Join(f.root, "release")
 	a := submitOrder(t, f, map[string]any{"label": "waiting", "before_gate": gate}, "waiting")

@@ -388,3 +388,13 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 제품 통합 검증에서 실제 실패의 파일·행이 유실되는 문제에 대응하여 기존 독립 검증된 도구 커밋 `9d77279`를 별도 병합했다. CLI·실제 변환 제품 코드는 바꾸지 않았으며 양쪽 roadmap 기록을 보존했다. 이후 실패는 `scripts/verify.sh`의 출력에서 실제 단정문·panic·race·패키지 진단을 확인할 수 있다.
 - 현재 규범의 `scripts/verify.sh --fast`는 도구 자기검증을 제품 게이트보다 먼저 실행하고 확인 138·실패 0으로 통과했다(`/tmp/remaining-current-testreport-fast.log`). 과거 원문 출력 제거 변형과 독립 재현은 기존 기록 그대로 유효하다. 이 도구 병합 뒤 제품 전체 검증은 SC-28·30 최종 통합에서 수행할 예정이며 빠른 검증만으로 전체 제품 완료를 주장하지 않는다.
 - 오케스트레이터가 실제 exec 직전 잔여 예산 검사를 제거하는 SC-38 핵심 변형을 별도 유효 작업트리의 전체 `go test -race -count=1 ./...`로 재현했다. SC-38/V-01의 delayed-exec와 delayed-limited-exec만 예상 의미 단정에서 실패했고 테스트 패키지 225.577초·종료 1이었다(`/tmp/todoable-independent-orchestrator-exec-budget.log`). 독립 리뷰에서 보였던 추가 VCS fixture 오류는 이 재현에 없었다. 원본 제품 코드는 변형하지 않았다.
+
+
+## 최종 감사의 SC-36·42 E2E 관측 보강 (2026-09-14)
+
+- SC-36은 wildcard가 일/요일 중 한쪽에만 있을 때 허용·거부 날짜와 실제 리포트 기간을 확인한다. 2096-02-29에서 2104-02-29까지 정확히 8년인 윤세기 경계를 등록·수동 접수·실제 산출물의 독립 기간과 입력 행으로 검증한다.
+- SC-42는 실제 두 접수 CLI와 데몬의 INSERT trigger 안에서 WAL/FULL/외래키/5000ms busy timeout을 기록한다. 관측용 별도 SQLite 연결의 설정을 제품 설정으로 오인하지 않는다. 신호 직전 ready 큐·전체 Step 개수·외부 명령 기록을 고정하고 종료 뒤 새 검사도 생기지 않는지 비교한다. 실제 명령의 부모와 fork 자식이 각각 받은 SIGTERM을 기록하고 자식 종료도 확인한다. 기존 두 제품 연결을 동시에 보유한 adapter 검증은 유지한다.
+- fast 확인 138·실패 0, SC-36·42 대상 전체 race 13.400초 통과(`/tmp/audit-boundaries-fast.log`, `/tmp/audit-boundaries-targeted-final.log`). 독립 감사의 재검증도 15.286초 통과했으며 B1/B2/B3 보강을 승인했다(`/tmp/todoable-final-scope-audit-round2.md`).
+- 기본 full에서 SC-36·42의 모든 V는 통과했다. 전체 집계는 확인 199·실패 10·미구현 2·건너뜀 1이다(`/tmp/audit-boundaries-full.log`). 네 fixture의 Go 빌드가 VCS status 128로 실패했으므로 전체 검증 성공으로 취급하지 않는다. 새 진단 보존 도구가 파일·행과 빌드 실패를 출력했다. 최종 전체 검증 전에 원인 조사와 재실행이 필요하다.
+- 별도 유효 작업트리에서 실제 제품 DSN의 foreign_keys만 off로 바꾸는 변형을 전체 `go test -race -count=1 ./...`로 실행했다. 기존 adapter 검증과 새 SC-42/V-02 실제 CLI 연결 단정이 모두 FK=0을 검출하여 종료 1이었다(267.695초, `/tmp/audit-fk-mutant-full.log`).
+- 자동 활성 leap 일정은 별도 재현에서 반복 탐색 중 조회 CLI의 database_busy로 실패했다(`/tmp/audit-leap-repro-automatic.log`, 18.212초). 수동 경계 보강으로 이를 해결했다고 주장하지 않는다. 날짜 탐색과 다른 Task/CLI 진행을 보강하는 별도 제품 수정이 진행 중이며 해당 회귀와 최종 full 통과 전 전체 완료가 아니다.
