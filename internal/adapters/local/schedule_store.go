@@ -289,7 +289,7 @@ func (s *Store) SubmitSchedule(id string, at time.Time, version int) (domain.Res
 	if e != nil {
 		return out, e
 	}
-	out, e = submitTx(tx, in)
+	out, e = submitTx(tx, in, s.config)
 	if e != nil {
 		return out, e
 	}
@@ -360,7 +360,7 @@ func (s *Store) publishSchedule(id string, now time.Time) error {
 			}
 			var out domain.Result
 			if e == nil {
-				out, e = submitTx(tx, in)
+				out, e = submitTx(tx, in, s.config)
 				if e != nil {
 					if _, rollbackErr := tx.Exec("ROLLBACK TO scheduled_intake"); rollbackErr != nil {
 						return rollbackErr

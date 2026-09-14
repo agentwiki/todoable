@@ -1,0 +1,72 @@
+package local
+
+import (
+	"errors"
+	"github.com/agentwiki/todoable/internal/domain"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+type Config struct {
+	Version               int               `json:"version"`
+	MaxRunningRuns        int               `json:"max_running_runs"`
+	MaxCheckProcesses     int               `json:"max_check_processes"`
+	MaxPendingSubmissions int               `json:"max_pending_submissions"`
+	MaxPendingPerInputKey int               `json:"max_pending_per_input_key"`
+	MaxInputBytes         int               `json:"max_input_bytes"`
+	MaxManifestBytes      int               `json:"max_manifest_bytes"`
+	MaxRepeat             int               `json:"max_repeat"`
+	MaxCallsPerRun        int               `json:"max_calls_per_run"`
+	StepLogBytes          int64             `json:"step_log_bytes"`
+	CompletedLogRetention string            `json:"completed_log_retention"`
+	CompletedLogBytes     int64             `json:"completed_log_bytes"`
+	Caps                  map[string]string `json:"caps"`
+}
+
+func DefaultConfig() Config {
+	return Config{1, 2, 4, 1000, 100, 1048576, 1048576, 1000, 100, 10485760, "720h", 1073741824, map[string]string{"repeat_delay": "24h", "start_poll_every": "24h", "start_wait_timeout": "720h", "start_check_timeout": "5m", "finish_check_timeout": "5m", "before_timeout": "1h", "agent_timeout": "4h", "after_timeout": "1h", "run_timeout": "24h"}}
+}
+func ReadConfig(dir string) (Config, error) {
+	c := DefaultConfig()
+	raw, e := ReadFileLimit(filepath.Join(dir, "config.yaml"), 1048576)
+	if errors.Is(e, os.ErrNotExist) {
+		return c, nil
+	}
+	if e != nil {
+		return c, e
+	}
+	raw, e = manifestJSON(raw, 1048576)
+	if e != nil {
+		return c, e
+	}
+	if e = domain.Decode(raw, &c); e != nil {
+		return c, e
+	}
+	if c.Version != 1 || c.MaxRunningRuns <= 0 || c.MaxCheckProcesses <= 0 || c.MaxPendingSubmissions <= 0 || c.MaxPendingPerInputKey <= 0 || c.MaxPendingPerInputKey > c.MaxPendingSubmissions || c.MaxInputBytes <= 0 || c.MaxInputBytes > int(^uint(0)>>1)-16385 || c.MaxManifestBytes <= 0 || c.MaxRepeat < 0 || c.MaxCallsPerRun <= 0 || c.StepLogBytes <= 0 || c.CompletedLogBytes <= 0 || !duration(c.CompletedLogRetention, time.Nanosecond, time.Duration(1<<63-1)) {
+		return c, domain.Invalid("invalid config limits")
+	}
+	defaults := DefaultConfig().Caps
+	for k, v := range c.Caps {
+		if _, ok := defaults[k]; !ok || !duration(v, time.Nanosecond, time.Duration(1<<63-1)) {
+			return c, domain.Invalid("invalid config cap: " + k)
+		}
+	}
+	if c.Caps == nil {
+		return c, domain.Invalid("caps must be an object")
+	}
+	for k, v := range defaults {
+		if _, ok := c.Caps[k]; !ok {
+			c.Caps[k] = v
+		}
+	}
+	return c, nil
+}
+func (s *Store) InputLimit() int                           { return s.config.MaxInputBytes }
+func (s *Store) ParseTask(raw []byte) (domain.Task, error) { return parseTask(raw, s.config) }
+func (s *Store) ReadManifest(path string) ([]byte, error) {
+	return ReadFileLimit(path, s.config.MaxManifestBytes)
+}
+func (s *Store) ReadSubmission(path string) ([]byte, error) {
+	return ReadFileLimit(path, s.config.MaxInputBytes+16384)
+}

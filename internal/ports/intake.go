@@ -3,6 +3,7 @@ package ports
 import "github.com/agentwiki/todoable/internal/domain"
 
 type IntakeStore interface {
+	InputLimit() int
 	Register(domain.Task) (int, error)
 	Update(domain.Task, int) (int, error)
 	SetEnabled(string, bool) error

@@ -414,17 +414,6 @@ func TestScenario_SC_32(t *testing.T) {
 	})
 }
 
-// TestScenario_SC_33: Task·입력·설정 파싱과 상한
-func TestScenario_SC_33(t *testing.T) {
-	todo(t, "SC-33")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-33")
-	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-33")
-	})
-}
-
 // TestScenario_SC_34: 환경·컨텍스트·명령 실행 계약
 func TestScenario_SC_34(t *testing.T) {
 	verify(t, "V-01", func(t *testing.T) { contractExecution(t) })

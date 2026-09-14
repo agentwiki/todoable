@@ -33,12 +33,15 @@ func ValidKey(s string) bool {
 
 // Canonical validates the original token stream before JCS binary64 conversion.
 func Canonical(raw []byte) ([]byte, error) {
+	return canonicalDepth(raw, 0)
+}
+func canonicalDepth(raw []byte, depth int) ([]byte, error) {
 	if !utf8.Valid(raw) {
 		return nil, Invalid("JSON must be UTF-8")
 	}
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.UseNumber()
-	if err := walk(d, 0); err != nil {
+	if err := walk(d, depth); err != nil {
 		return nil, Invalid(err.Error())
 	}
 	if _, err := d.Token(); err != io.EOF {
@@ -115,11 +118,23 @@ type SubmissionInput struct {
 }
 
 func ParseSubmission(raw []byte) (SubmissionInput, error) {
+	return ParseSubmissionLimit(raw, 1048576)
+}
+func ParseSubmissionLimit(raw []byte, limit int) (SubmissionInput, error) {
 	var in SubmissionInput
-	if len(raw) > 1048576+16384 {
+	if len(raw) > limit+16384 {
 		return in, Invalid("submission too large")
 	}
-	if e := Decode(raw, &in); e != nil {
+	canonical, e := canonicalDepth(raw, -1)
+	if e != nil {
+		return in, e
+	}
+	decoder := json.NewDecoder(bytes.NewReader(canonical))
+	decoder.DisallowUnknownFields()
+	if e := decoder.Decode(&in); e != nil {
+		return in, Invalid(e.Error())
+	}
+	if _, e := Canonical(in.Input); e != nil {
 		return in, e
 	}
 	// Check original input size, before canonical whitespace removal.
@@ -127,7 +142,7 @@ func ParseSubmission(raw []byte) (SubmissionInput, error) {
 	if e := json.Unmarshal(raw, &fields); e != nil {
 		return in, Invalid(e.Error())
 	}
-	if len(fields["input"]) > 1048576 || len(in.Input) > 1048576 {
+	if len(fields["input"]) > limit || len(in.Input) > limit {
 		return in, Invalid("input too large")
 	}
 	if !ValidID(in.TaskID) || !ValidKey(in.InputKey) || !ValidKey(in.ConcurrencyKey) || len(in.Input) == 0 || in.Input[0] != '{' || (in.TaskVersion != nil && *in.TaskVersion < 1) {
@@ -137,7 +152,7 @@ func ParseSubmission(raw []byte) (SubmissionInput, error) {
 }
 func (in SubmissionInput) Hash() string {
 	raw, _ := json.Marshal([]any{in.TaskID, in.InputKey, in.Input})
-	c, _ := Canonical(raw)
+	c, _ := canonicalDepth(raw, -1)
 	sum := sha256.Sum256(c)
 	return hex.EncodeToString(sum[:])
 }

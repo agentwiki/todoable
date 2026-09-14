@@ -16,6 +16,9 @@ func DefaultDir() string {
 	return filepath.Join(os.Getenv("HOME"), ".local/share/todoable")
 }
 func ReadFile(path string) ([]byte, error) {
+	return ReadFileLimit(path, 1048576+16384)
+}
+func ReadFileLimit(path string, limit int) ([]byte, error) {
 	var r io.Reader = os.Stdin
 	if path != "-" {
 		f, e := os.Open(path)
@@ -25,11 +28,11 @@ func ReadFile(path string) ([]byte, error) {
 		defer func() { _ = f.Close() }()
 		r = f
 	}
-	b, e := io.ReadAll(io.LimitReader(r, 1048576+16385))
+	b, e := io.ReadAll(io.LimitReader(r, int64(limit)+1))
 	if e != nil {
 		return nil, e
 	}
-	if len(b) > 1048576+16384 {
+	if len(b) > limit {
 		return nil, domain.Invalid("file too large")
 	}
 	return b, nil
