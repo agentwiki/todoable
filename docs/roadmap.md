@@ -152,3 +152,12 @@ YAML alias와 설치 `config.yaml`은 현재 지원하지 않고 명시적으로
 - `scripts/verify.sh --fast` 확인 122 통과. 기본 full은 확인 111·실패 0·TODO 15이며 현재 27개 구현 시나리오의 모든 V가 통과한다. 로그 `/tmp/sc09-order-fast.log`, `/tmp/sc09-order-full.log`; 전체 full은 남은 TODO로 실패한다.
 - free-0 시작검사에 200ms 지연만 추가한 `/tmp/todoable-sc09-delayed-5qani39g` 별도 복사에서 전체 `go test -race -count=1 ./...`가 종료 0으로 통과했다(로그 `/tmp/sc09-order-delayed.log`). 병렬 순서 교란을 허용하는지 확인한 것이며 TODO 시나리오의 제품 완료를 뜻하지 않는다.
 - 전역 Run 예약 상한을 2에서 3으로 올린 `/tmp/todoable-sc09-overcap-hrlj05o6` 변형은 같은 전체 race 실행에서 SC-09/V-01이 실제 구간 3 대 허용 2, V-02가 2 대 허용 1을 검출해 실패한다. SC-20/V-02의 no-PID 슬롯 검증도 함께 실패했다. 로그 `/tmp/sc09-order-overcap.log`, 실제 종료 1. 제품 코드는 원 worktree에서 변경하지 않았다.
+
+## 수동 해소 1차 독립 리뷰 보강 (2026-09-14)
+
+- 독립 리뷰에서 start가 없고 before가 있는 Task의 종료검사를 재시도하면, ready 예약이 최초 Task 구조만 보고 검사 슬롯을 소비하지 않는 단계로 판단하여 검사 4개가 점유된 상태에서도 다섯 번째를 예약하는 결함을 확인했다. 예약 트랜잭션은 resume_queue에 저장된 실제 다음 단계를 우선하여 검사 슬롯 필요 여부를 판정하도록 수정했다.
+- SC-23/V-02는 종료검사 차단 뒤 다른 Task의 시작검사 4개를 외부 gate로 점유하고 retry를 요청한다. 재검사 Step·실행 기록이 늘지 않고 슬롯 4개를 유지하는지, gate 해제 후 종료검사부터 재개하여 전처리 중복 실행 없이 성공·산출물·최종 슬롯 반환에 도달하는지 대조한다.
+- 독립 리뷰의 두 번째 변형은 retry에만 정지 증거를 요구하고 결과 확인에는 요구하지 않아도 기존 테스트가 통과하는 공백이었다. SC-22/V-02는 시작 식별값이 다른 살아 있는 agent에 retry·confirm-success·confirm-failure를 모두 거부하고 각 요청 전후 단계·소유 버전·호출/반복/시간 예산·Step 관측 결과·감사·자원·Run/검사 슬롯이 동일한지 확인한다. 정지 미확인 시간의 정상 소비와 요청 자체의 변경을 구분하기 위해 SQLite 쓰기 소유를 먼저 확보한 뒤 복구 데몬을 일시 정지한다. 재개 후 독립 작업을 완료시키며 차단 명령·산출물 미실행과 원래 프로세스 보존도 확인한다.
+- `scripts/verify.sh --fast` 확인 122 통과. 최종 full은 확인 136·실패 0·TODO 14이며 28개 구현 시나리오의 모든 V 통과를 유지한다. 로그 `/tmp/manual-reviewfix-fast.log`, `/tmp/manual-reviewfix-full.log`. SC-38의 영 시간 예산·취소 결합은 계속 미완 범위로 남긴다.
+- 수정 전 검사 슬롯 판정으로 되돌린 `/tmp/todoable-manual-reviewfix-checkcap-oaqfxcdz` 복사에서 전체 `go test -race -count=1 ./...`를 실행했다. SC-23/V-02가 종료검사 Step 2개·검사 슬롯 5개를 검출하여 종료 1로 실패한다. 로그 `/tmp/manual-reviewfix-checkcap-mutation.log`.
+- 결과 확인에서만 정지 증거를 생략하는 `/tmp/todoable-manual-reviewfix-stop-k2f_zxyd` 변형도 전체 race에서 SC-22/V-02/agent가 실패한다. 정지 미확인인데 confirm-success가 코드 0·ready 상태와 수동 감사 기록을 반환한 것을 거부 코드 6 기대와 대조해 검출했다. 로그 `/tmp/manual-reviewfix-stop-mutation.log`, 실제 종료 1. 두 변형 모두 원 worktree에는 적용하지 않았다.
