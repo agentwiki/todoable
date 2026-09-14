@@ -32,6 +32,7 @@ type Outcome struct {
 	StderrPath           string `json:"stderr_path"`
 	PID, PGID            int
 	BootID, ProcessStart string
+	Untracked            bool `json:"untracked_processes,omitempty"`
 	ElapsedNS            int64
 }
 

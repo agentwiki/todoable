@@ -49,6 +49,8 @@ func (d *Daemon) Close() error { d.stop(); return d.lock.Close() }
 func (d *Daemon) Stopped(err error) bool {
 	return errors.Is(err, context.Canceled) || d.context.Err() != nil
 }
-func (s *Store) Executor() *Runner { return &Runner{Dir: s.dir, Started: s.Started} }
+func (s *Store) Executor() *Runner {
+	return &Runner{Dir: s.dir, Started: s.Started, Cancelled: s.CancellationRequested}
+}
 
 func (d *Daemon) Stop() { d.stop() }

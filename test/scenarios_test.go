@@ -252,12 +252,10 @@ func TestScenario_SC_20(t *testing.T) {
 
 // TestScenario_SC_21: after 외부 효과 직후 결과 저장 전 종료
 func TestScenario_SC_21(t *testing.T) {
-	todo(t, "SC-21")
-	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-21")
-	})
+	verify(t, "V-01", func(t *testing.T) { afterEffectRecovery(t, "") })
 	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-21")
+		t.Run("confirm", func(t *testing.T) { afterEffectRecovery(t, "confirm") })
+		t.Run("acknowledge", func(t *testing.T) { afterEffectRecovery(t, "cancel") })
 	})
 }
 
@@ -275,12 +273,16 @@ func TestScenario_SC_23(t *testing.T) {
 
 // TestScenario_SC_24: 취소와 완료 경합
 func TestScenario_SC_24(t *testing.T) {
-	todo(t, "SC-24")
 	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-24")
+		t.Run("cancel-first", func(t *testing.T) { cancellationCompletionOrder(t, false) })
+		t.Run("complete-first", func(t *testing.T) { cancellationCompletionOrder(t, true) })
 	})
 	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-24")
+		t.Run("before-exec", cancelBeforeExec)
+		t.Run("active", cancelActiveCommand)
+		for _, changed := range []string{"owner", "state", "stage"} {
+			t.Run(changed, func(t *testing.T) { cancellationStaleOwner(t, changed) })
+		}
 	})
 }
 
@@ -419,13 +421,11 @@ func TestScenario_SC_38(t *testing.T) {
 
 // TestScenario_SC_39: 결과 불명 접수의 취소 해소
 func TestScenario_SC_39(t *testing.T) {
-	todo(t, "SC-39")
 	verify(t, "V-01", func(t *testing.T) {
-		todo(t, "SC-39")
+		t.Run("confirm", func(t *testing.T) { cancelledUnknownResolution(t, true) })
+		t.Run("acknowledge", func(t *testing.T) { cancelledUnknownResolution(t, false) })
 	})
-	verify(t, "V-02", func(t *testing.T) {
-		todo(t, "SC-39")
-	})
+	verify(t, "V-02", unconfirmedCancellation)
 }
 
 // TestScenario_SC_40: 설정 변경과 기존 접수 보호

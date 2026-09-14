@@ -11,3 +11,10 @@ func Resume(store ports.RecoveryStore, request domain.ResumeRequest) (map[string
 	}
 	return store.Resume(request)
 }
+
+func Cancel(store ports.RecoveryStore, request domain.CancelRequest) (map[string]any, error) {
+	if err := domain.ValidateCancel(request); err != nil {
+		return nil, err
+	}
+	return store.Cancel(request)
+}

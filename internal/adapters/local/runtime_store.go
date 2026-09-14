@@ -17,6 +17,10 @@ func (s *Store) initRuntime() error {
  CREATE TABLE IF NOT EXISTS steps(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,run_id TEXT NOT NULL REFERENCES runs(id),stage TEXT NOT NULL,call_index INTEGER NOT NULL,owner_version INTEGER NOT NULL,result TEXT,pid INTEGER,pgid INTEGER,boot_id TEXT,process_start TEXT);
  CREATE TABLE IF NOT EXISTS ready_queue(seq INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL UNIQUE REFERENCES runs(id));
  CREATE TABLE IF NOT EXISTS run_schedule(run_id TEXT PRIMARY KEY REFERENCES runs(id),eligible_at INTEGER NOT NULL DEFAULT 0,start_started_at INTEGER NOT NULL DEFAULT 0,wait_deadline INTEGER NOT NULL DEFAULT 0,ready_seq INTEGER NOT NULL DEFAULT 0,slot_held INTEGER NOT NULL DEFAULT 0);
+ CREATE TABLE IF NOT EXISTS cancel_requests(submission_id TEXT PRIMARY KEY REFERENCES submissions(id),reason TEXT NOT NULL,acknowledge_effects INTEGER NOT NULL,processes_stopped INTEGER NOT NULL,effects_unknown INTEGER NOT NULL DEFAULT 0);
+ CREATE TABLE IF NOT EXISTS cancellation_audit(seq INTEGER PRIMARY KEY AUTOINCREMENT,submission_id TEXT NOT NULL REFERENCES submissions(id),reason TEXT NOT NULL,acknowledge_effects INTEGER NOT NULL,processes_stopped INTEGER NOT NULL,created_at INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS stop_confirmations(step_id TEXT PRIMARY KEY REFERENCES steps(id));
+ CREATE TABLE IF NOT EXISTS runtime_diagnostics(seq INTEGER PRIMARY KEY AUTOINCREMENT,step_id TEXT NOT NULL,message TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS run_clocks(run_id TEXT PRIMARY KEY REFERENCES runs(id),ticking_at INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS resume_queue(run_id TEXT PRIMARY KEY REFERENCES runs(id),stage TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS step_resolutions(seq INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL REFERENCES runs(id),step_id TEXT NOT NULL REFERENCES steps(id),action TEXT NOT NULL,exit_code INTEGER,reason TEXT NOT NULL,processes_stopped INTEGER NOT NULL,created_at INTEGER NOT NULL);
@@ -43,7 +47,7 @@ func (s *Store) Reserve() (*domain.Execution, error) {
 	var remaining, started, deadline int64
 	e = tx.QueryRow(`SELECT r.id,r.submission_id,s.task_id,s.task_version,s.input_key,s.input,r.run_seq,r.calls_used,s.snapshot,rt.stage,rt.phase,coalesce(rt.last_check,'null'),rt.remaining_ns,rs.start_started_at,rs.wait_deadline
  FROM runs r JOIN submissions s ON s.id=r.submission_id JOIN runtime rt ON rt.run_id=r.id JOIN run_schedule rs ON rs.run_id=r.id LEFT JOIN ready_queue q ON q.run_id=r.id
- WHERE r.state IN ('waiting','running') AND (rt.next_at<=? OR (rs.wait_deadline>0 AND rs.wait_deadline<=? AND rt.stage='start_check' AND rt.phase='preflight'))
+ WHERE r.state IN ('waiting','running') AND NOT EXISTS(SELECT 1 FROM cancel_requests WHERE submission_id=s.id) AND (rt.next_at<=? OR (rs.wait_deadline>0 AND rs.wait_deadline<=? AND rt.stage='start_check' AND rt.phase='preflight'))
  AND NOT EXISTS(SELECT 1 FROM steps st WHERE st.run_id=r.id AND st.result IS NULL)
  AND NOT EXISTS(SELECT 1 FROM submissions older WHERE older.task_id=s.task_id AND older.input_key=s.input_key AND older.seq<s.seq AND older.state='active')
  AND (rt.stage!='ready' OR (NOT EXISTS(SELECT 1 FROM resources WHERE key=s.concurrency_key AND run_id!=r.id) AND (SELECT count(*) FROM run_schedule WHERE slot_held=1)<2))
@@ -188,7 +192,7 @@ func (s *Store) Complete(x domain.Execution, o domain.Outcome, next string) erro
 	if e != nil {
 		return e
 	}
-	result, e := tx.Exec(`UPDATE steps SET result=? WHERE id=? AND result IS NULL AND owner_version=(SELECT owner_version FROM runtime WHERE run_id=?)`, string(raw), x.StepID, x.RunID)
+	result, e := tx.Exec(`UPDATE steps SET result=? WHERE id=? AND stage=? AND result IS NULL AND owner_version=(SELECT owner_version FROM runtime WHERE run_id=?) AND stage=(SELECT stage FROM runtime WHERE run_id=?) AND EXISTS(SELECT 1 FROM runs WHERE id=? AND state=CASE WHEN ?='preflight' THEN 'waiting' ELSE 'running' END)`, string(raw), x.StepID, x.Stage, x.RunID, x.RunID, x.RunID, x.Phase)
 	if e != nil {
 		return e
 	}
@@ -197,11 +201,28 @@ func (s *Store) Complete(x domain.Execution, o domain.Outcome, next string) erro
 		return e
 	}
 	if n != 1 {
-		return errors.New("stale Step completion")
+		if _, e = tx.Exec("INSERT INTO runtime_diagnostics(step_id,message) VALUES(?,'ignored stale Step completion')", x.StepID); e != nil {
+			return e
+		}
+		return tx.Commit()
 	}
 	if o.Kind != "process_unknown" {
 		if _, e = tx.Exec("DELETE FROM check_slots WHERE step_id=?", x.StepID); e != nil {
 			return e
+		}
+	}
+	cancelled, e := cancelledSubmission(tx, x.SubmissionID)
+	if e != nil {
+		return e
+	}
+	if cancelled {
+		switch {
+		case o.Kind == "process_unknown":
+			next = "blocked:process_unknown"
+		case strings.HasSuffix(x.Stage, "_check") || o.Kind == "exited" || o.Kind == "start_failed" || o.Kind == "not_started":
+			next = "cancelled"
+		default:
+			next = "blocked:outcome_unknown"
 		}
 	}
 	last := "null"
@@ -246,7 +267,7 @@ func (s *Store) Complete(x domain.Execution, o domain.Outcome, next string) erro
 			}
 		}
 	}
-	terminal := next == "succeeded" || strings.HasPrefix(next, "failed:") || strings.HasPrefix(next, "skipped:")
+	terminal := next == "cancelled" || next == "succeeded" || strings.HasPrefix(next, "failed:") || strings.HasPrefix(next, "skipped:")
 	if terminal || strings.HasPrefix(next, "blocked:") {
 		state = strings.SplitN(next, ":", 2)[0]
 	}

@@ -22,9 +22,10 @@ import (
 
 // Runner executes one committed step using its submission snapshot.
 type Runner struct {
-	Dir      string
-	Started  func(domain.ProcessIdentity) error
-	LogBytes int64
+	Dir       string
+	Started   func(domain.ProcessIdentity) error
+	LogBytes  int64
+	Cancelled func(string) (bool, error)
 }
 
 func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.Outcome, err error) {
@@ -123,6 +124,16 @@ func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.
 	defer stderrWrite.Close()
 	command.Stdout = stdoutWrite
 	command.Stderr = stderrWrite
+	if r.Cancelled != nil {
+		cancelled, e := r.Cancelled(step.StepID)
+		if e != nil {
+			return out, e
+		}
+		if cancelled {
+			out.Kind = "not_started"
+			return out, nil
+		}
+	}
 	if ctx.Err() != nil {
 		out.Kind = "unknown"
 		return out, nil
@@ -195,6 +206,17 @@ func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.
 				stopAt = time.Now().Add(10 * time.Second)
 			}
 		case <-ticker.C:
+			if r.Cancelled != nil && !interrupted {
+				cancelled, e := r.Cancelled(step.StepID)
+				if e != nil {
+					err = errors.Join(err, e)
+				}
+				if cancelled || e != nil {
+					interrupted = true
+					_ = syscall.Kill(-out.PGID, syscall.SIGTERM)
+					stopAt = time.Now().Add(10 * time.Second)
+				}
+			}
 		}
 		if interrupted && !stopAt.IsZero() && !time.Now().Before(stopAt) {
 			if !killed {
@@ -217,6 +239,7 @@ func (r Runner) Execute(ctx context.Context, step domain.Execution) (out domain.
 	case <-drained:
 	case <-time.After(time.Second):
 		// A command that escaped its group can retain inherited pipe handles.
+		out.Untracked = true
 		out.Kind = "process_unknown"
 		_ = stdoutRead.Close()
 		_ = stderrRead.Close()

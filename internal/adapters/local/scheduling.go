@@ -67,6 +67,13 @@ func enqueueReady(tx *sql.Tx, id string) error {
 	return e
 }
 func finishRun(tx *sql.Tx, x domain.Execution) error {
+	cancelled, err := cancelledSubmission(tx, x.SubmissionID)
+	if err != nil {
+		return err
+	}
+	if cancelled {
+		return finishCancelledRun(tx, x.RunID)
+	}
 	if _, e := tx.Exec("DELETE FROM resources WHERE run_id=?", x.RunID); e != nil {
 		return e
 	}
