@@ -103,7 +103,7 @@ func configRuntimeChange(t *testing.T) {
 	writeTest(t, cfg, []byte(newConfig), 0600)
 	f.call(t, "run", "show", a["run_id"].(string), "--json")
 	f.call(t, "schedule", "show", "runtime", "--json")
-	for _, args := range [][]string{{"task", "register", f.manifest}, {"task", "update", f.manifest, "--if-version", "3"}, {"task", "enable", "runtime"}, {"task", "disable", "runtime"}, {"run", "submit", filepath.Join(f.root, "core-input.json")}, {"schedule", "enable", "runtime"}, {"schedule", "disable", "runtime"}, {"schedule", "submit", "runtime", "--at", "2026-09-14T00:00:00Z"}, {"resume", a["run_id"].(string), "--step", activeStep, "--action", "confirm-success", "--reason", "configuration mismatch must not resolve work"}, {"submission", "cancel", a["submission_id"].(string), "--reason", "configuration mismatch must not cancel work", "--acknowledge-effects"}} {
+	for _, args := range [][]string{{"task", "register", f.manifest}, {"task", "update", f.manifest, "--if-version", "3"}, {"task", "enable", "runtime"}, {"task", "disable", "runtime"}, {"task", "cancel", "runtime", "--reason", "configuration mismatch"}, {"run", "submit", filepath.Join(f.root, "core-input.json")}, {"schedule", "enable", "runtime"}, {"schedule", "disable", "runtime"}, {"schedule", "submit", "runtime", "--at", "2026-09-14T00:00:00Z"}, {"resume", a["run_id"].(string), "--step", activeStep, "--action", "confirm-success", "--reason", "configuration mismatch must not resolve work"}, {"submission", "cancel", a["submission_id"].(string), "--reason", "configuration mismatch must not cancel work", "--acknowledge-effects"}} {
 		f.rejected(t, 6, "config_mismatch", args...)
 	}
 	if f.durableAdmission(t) != before || parsingDefinitions(t, f.intakeFixture) != definitions {

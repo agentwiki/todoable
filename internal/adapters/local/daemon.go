@@ -13,6 +13,7 @@ import (
 )
 
 type Daemon struct {
+	store       *Store
 	lock        *os.File
 	context     context.Context
 	stop        context.CancelFunc
@@ -67,7 +68,12 @@ func (s *Store) Daemon() (*Daemon, error) {
 		_ = lock.Close()
 		return nil, e
 	}
-	return &Daemon{lock: lock, context: ctx, stop: stop}, nil
+	if e = s.RecordDaemonState("running"); e != nil {
+		stop()
+		_ = lock.Close()
+		return nil, e
+	}
+	return &Daemon{store: s, lock: lock, context: ctx, stop: stop}, nil
 }
 func (d *Daemon) Context() context.Context { return d.context }
 func (d *Daemon) Pause() bool {
@@ -78,7 +84,11 @@ func (d *Daemon) Pause() bool {
 		return true
 	}
 }
-func (d *Daemon) Close() error { d.stop(); return d.lock.Close() }
+func (d *Daemon) Close() error {
+	d.stop()
+	err := d.store.RecordDaemonState("stopped")
+	return errors.Join(err, d.lock.Close())
+}
 func (d *Daemon) Stopped(err error) bool {
 	return errors.Is(err, context.Canceled) || d.context.Err() != nil
 }

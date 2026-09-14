@@ -53,6 +53,13 @@ func stoppedEvidence(b blockedStep, declared bool) bool {
 	return err == nil && stopped
 }
 func (s *Store) Resume(r domain.ResumeRequest) (map[string]any, error) {
+	var exists int
+	if err := s.db.QueryRow("SELECT count(*) FROM steps WHERE id=? AND run_id=?", r.StepID, r.RunID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if exists == 0 {
+		return nil, &domain.Fault{Code: 4, Kind: "not_found", Message: "Run or Step not found"}
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err

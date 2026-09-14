@@ -6,3 +6,7 @@ type RecoveryStore interface {
 	Resume(domain.ResumeRequest) (map[string]any, error)
 	Cancel(domain.CancelRequest) (map[string]any, error)
 }
+
+type TaskCancellationStore interface {
+	CancelTask(domain.TaskCancelRequest) (map[string]any, error)
+}

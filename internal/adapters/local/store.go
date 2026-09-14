@@ -65,6 +65,10 @@ func Open(dir string) (*Store, error) {
 		_ = db.Close()
 		return nil, e
 	}
+	if e = s.initObservation(); e != nil {
+		_ = db.Close()
+		return nil, e
+	}
 	return s, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
@@ -231,6 +235,13 @@ func (s *Store) Run(id string) (map[string]any, error) {
 		return nil, e
 	}
 	out := map[string]any{"protocol_version": 1, "task_id": task, "task_version": version, "input_key": inputKey, "input": json.RawMessage(input), "submission_id": submission, "run_id": id, "run_seq": seq, "state": state, "stage": "waiting", "calls_used": calls, "repeat": total, "repeat_remaining": remaining, "concurrency_key": concurrency, "predecessor": nil, "next_check_at": nil, "scheduled_at": nil, "last_check": nil, "time_remaining": nil, "cancel_requested": false, "blocked_reason": nil, "steps": []any{}}
+	var predecessor string
+	e = s.db.QueryRow(`SELECT older.id FROM submissions current JOIN submissions older ON older.task_id=current.task_id AND older.input_key=current.input_key WHERE current.id=? AND older.seq<current.seq AND older.state='active' ORDER BY older.seq DESC LIMIT 1`, submission).Scan(&predecessor)
+	if e == nil {
+		out["predecessor"] = predecessor
+	} else if !errors.Is(e, sql.ErrNoRows) {
+		return nil, e
+	}
 	var at string
 	if e = s.db.QueryRow("SELECT scheduled_at FROM scheduled_submissions WHERE submission_id=?", submission).Scan(&at); e == nil {
 		out["scheduled_at"] = at

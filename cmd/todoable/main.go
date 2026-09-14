@@ -20,6 +20,12 @@ func run(args []string) int {
 	if len(args) > 1 && args[0] == "submission" && args[1] == "cancel" {
 		return cancelCommand(dir, args)
 	}
+	if len(args) > 0 && (args[0] == "status" || args[0] == "logs" || len(args) > 1 && (args[0] == "task" || args[0] == "run") && args[1] == "show") {
+		return observeCommand(dir, args)
+	}
+	if len(args) > 1 && args[0] == "task" && args[1] == "cancel" {
+		return taskCancelCommand(dir, args)
+	}
 	if len(args) > 0 && args[0] == "resume" {
 		return resumeCommand(dir, args)
 	}
@@ -30,14 +36,14 @@ func run(args []string) int {
 		return daemon(dir)
 	}
 	if len(args) < 3 {
-		return local.Fail(domain.Invalid("supported: task register FILE, run submit FILE, run show ID --json"))
+		return local.Fail(domain.Invalid("expected a supported command and its arguments"))
 	}
 	command := args[0] + " " + args[1]
-	if command != "task register" && command != "run submit" && command != "run show" && command != "task update" && command != "task enable" && command != "task disable" {
-		return local.Fail(&domain.Fault{Code: 6, Kind: "not_implemented", Message: "command is not implemented"})
+	if command != "task register" && command != "run submit" && command != "task update" && command != "task enable" && command != "task disable" {
+		return local.Fail(domain.Invalid("unknown command"))
 	}
-	if (command != "run show" && command != "task update" && len(args) != 3) || (command == "run show" && (len(args) != 4 || args[3] != "--json")) {
-		return local.Fail(domain.Invalid("invalid command arguments; run show currently requires --json"))
+	if command != "task update" && len(args) != 3 {
+		return local.Fail(domain.Invalid("invalid command arguments"))
 	}
 	expected := 0
 	if command == "task update" {
@@ -55,10 +61,8 @@ func run(args []string) int {
 		return local.Fail(err)
 	}
 	defer func() { _ = store.Close() }()
-	if command != "run show" {
-		if err = store.CheckCLIConfig(); err != nil {
-			return local.Fail(err)
-		}
+	if err = store.CheckCLIConfig(); err != nil {
+		return local.Fail(err)
 	}
 	var value any
 	switch command {
@@ -87,8 +91,6 @@ func run(args []string) int {
 		if err == nil {
 			value, err = usecases.Submit(store, raw)
 		}
-	case "run show":
-		value, err = store.Run(args[2])
 	}
 	if err != nil {
 		return local.Fail(err)
@@ -124,6 +126,11 @@ func daemon(dir string) int {
 		defer workers.Done()
 		for d.Context().Err() == nil {
 			if d.CleanupDue() {
+				if e := store.RecordDaemonState("running"); e != nil {
+					errors <- e
+					d.Stop()
+					return
+				}
 				if e := store.CleanupLogs(); e != nil {
 					errors <- e
 					d.Stop()

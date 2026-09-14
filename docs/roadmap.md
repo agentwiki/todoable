@@ -1,15 +1,15 @@
 # 남은 작업
 
-SC-01~24·26~27·32~37·39~40의 34개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소를 구현했으며 시간 예산 전체 계약은 해당 미구현 시나리오가 남아 있다.
+SC-01~24·26~27·31~37·39~41의 36개 시나리오 E2E를 구현했다. 접수 검증은 실제 CLI와 SQLite를 대조하고 작업 명령이 접수 CLI에서 실행되지 않는지 확인한다. 실행 검증은 별도 `daemon`이 시작·종료검사와 전처리·에이전트·후처리를 수행하는 실제 기록과 산출물을 대조한다. 데몬은 여러 Step을 처리하며 기본 Run 2개·검사 4개 상한을 예약 트랜잭션에서 적용한다. 정지 미확인 Run 슬롯을 포함한 병렬 상한과 실행 의도 복구를 확인했다. Step별 수동 해소와 입력 접수 취소를 구현했으며 시간 예산 전체 계약은 해당 미구현 시나리오가 남아 있다.
 
-현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task enable ID`, `task disable ID`, `run submit FILE`, `run show RUN_ID --json`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `submission cancel ID --reason TEXT [--acknowledge-effects] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 다른 명령과 schedule 외의 사람용 조회 출력은 미구현이다.
+현재 사용할 수 있는 명령은 `task register FILE`, `task update FILE --if-version N`, `task show ID [--version N] [--json]`, `task enable ID`, `task disable ID`, `task cancel ID --reason TEXT`, `run submit FILE`, `run show RUN_ID [--json]`, `status [--task ID] [--json]`, `logs RUN_ID [--step STEP_ID] [--follow]`, `schedule enable ID`, `schedule disable ID`, `schedule show ID [--json]`, `schedule submit ID --at TIME [--task-version N]`, `resume RUN_ID --step STEP_ID --action ACTION --reason TEXT [--exit-code N] [--processes-stopped]`, `submission cancel ID --reason TEXT [--acknowledge-effects] [--processes-stopped]`, `daemon`이며 전역 `--data-dir DIR`를 앞에 지정할 수 있다. 접수 코드 0은 영속 저장 성공이다. CLI는 작업 명령을 실행하지 않는다. 조회는 기본 사람이 읽는 형식이며 `--json`으로 JSON 객체를 받는다. 로그 조회는 원본 바이트를 출력하며 `--follow`는 이후 Step의 출력까지 따라간다.
 
 | 상태 | 작업 | 관련 시나리오 |
 | --- | --- | --- |
 | E2E 통과 | 같은 입력 동시 접수·재전송, 원자적 최초 Run·반복 예산 저장 | SC-01 |
 | E2E 통과 | 응답 전 강제 종료 복구, 포화·비활성 중 중복, 갱신 뒤 재전송, JCS·메타데이터·해시 충돌·잘못된 JSON | SC-02·03·07·32 |
 | E2E 통과 | 입력 키별 전체 반복 순서·차단 선두, 과거 입력 중복, 갱신 경합의 온전한 실행 스냅샷 | SC-04·05·06 |
-| 부분 구현 | Task 활성 전환·과거 정의 보존. Task 전체 취소·조회는 미완 | SC-31 |
+| E2E 통과 | Task 등록·버전 충돌·활성 전환·과거 정의·전체 취소와 거부 원자성 | SC-31 |
 | E2E 통과 | 설치 설정·Task·입력 파싱, 원본/정규화 크기·깊이·기간 상한, 과거 버전 신규 접수 현 cap 검증 | SC-33 |
 | 부분 구현 | SQLite WAL·FULL·외래키·고유 제약·즉시 트랜잭션 | SC-02~10, SC-42 |
 | E2E 통과 | 최초 검사 성공, 마지막 호출 뒤 검사, 정상 비영 agent 결과, 환경·컨텍스트·argv·stdin·로그 | SC-11·12·13·34 |
@@ -26,10 +26,10 @@ SC-01~24·26~27·32~37·39~40의 34개 시나리오 E2E를 구현했다. 접수 
 | E2E 통과 | 실행 중 설정 해시 비교·재시작 실행/검사/접수/로그 상한·기존 예산 보존 | SC-40 |
 | E2E 통과 | 오래된 완료 stdout·stderr 기간/총량 정리, 진행·차단 로그와 실제 수동 감사·이력·중복 기록 보존 | SC-27 |
 | 미구현 | 저장 실패와 storage_paused 모드 | SC-25 |
-| 부분 구현 | JSON 오류와 접수·Run 조회. 나머지 CLI·데몬 경계 | SC-41 |
+| E2E 통과 | 전체 CLI·사람/JSON 조회·로그 follow·기본경로·코드0~6·데몬 부재/오래된 관측 | SC-41 |
 | 미구현 | 실제 이슈 수정·자료 변환·기간 리포트 | SC-28~30 |
 
-YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이 제한과 설치 cap을 적용한다. 신규 접수는 선택한 현재·과거 Task 버전을 현 cap으로 검증하고, 기존 접수의 재전송은 같은 접수로 돌려준다. 실행 중 데몬과 CLI의 설정 해시가 다르면 조회만 허용하고 변경 명령은 재시작을 요구한다. 재시작한 데몬은 실행·검사·로그 관리의 현 상한을 사용하며 기존 접수의 스냅샷·예산은 유지한다. 일정 정의·활성화·비활성화·기간 수동 접수는 구현했으나 Task 전체 취소·조회는 SC-31의 미완 항목이다. 접수 환경 스냅샷을 실제 실행에 전달하는 계약은 SC-34에서 확인했다.
+YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이 제한과 설치 cap을 적용한다. 신규 접수는 선택한 현재·과거 Task 버전을 현 cap으로 검증하고, 기존 접수의 재전송은 같은 접수로 돌려준다. 실행 중 데몬과 CLI의 설정 해시가 다르면 조회만 허용하고 변경 명령은 재시작을 요구한다. 재시작한 데몬은 실행·검사·로그 관리의 현 상한을 사용하며 기존 접수의 스냅샷·예산은 유지한다. 일정 정의·활성화·비활성화·기간 수동 접수와 Task 전체 취소·과거 버전 조회를 구현했다. 접수 환경 스냅샷을 실제 실행에 전달하는 계약은 SC-34에서 확인했다.
 
 ## 검증 기록 (2026-09-11)
 
@@ -285,3 +285,16 @@ YAML alias와 설치 `config.yaml`을 지원하며 파일·확장 크기·깊이
 - 취소/설정 통합 `28547a7`에 독립 승인된 SC-27 `5846dfc`를 병합했다. 변경은 SC-27 E2E와 검증 문서이며 제품 코드에는 추가 변경이 없다. 양쪽 이력과 현재 34개 구현 시나리오 상태를 보존했다.
 - `scripts/verify.sh`의 빠른 등급 확인 132·실패 0, full 확인 166·실패 0·미구현 8을 확인했다. 구현한 34개 시나리오 모든 V는 통과하며 나머지 TODO로 full 전체는 종료 1이다. 로그 `/tmp/cancellation-retention-integration-full.log`. L3 실환경은 실행하지 않았다.
 - SC-27 감사 삭제 변형은 독립 리뷰와 오케스트레이터의 전체 race에서 SC-27/V-01·V-02 실패로 검출했다. 오케스트레이터 로그 `/tmp/log-retention-orchestrator-current.log`. 이 병합은 기존 검증 묶음을 함께 실행하며 새로운 제품 변형은 추가하지 않았다. 취소 CLI 설정 가드의 별도 통합 리뷰는 진행 중이다.
+
+
+## SC-31·41 Task 전체 취소와 CLI 관측 (2026-09-14)
+
+- Task 전체 취소는 Task 비활성·일정 비활성·해당 Task의 미완료 접수 취소 요청·감사·잔여 반복 제거를 하나의 트랜잭션으로 저장한다. 두 번째 접수 감사 INSERT 실패를 주입하여 앞선 요청과 비활성 변경까지 롤백되는지 확인한다. 재활성화는 과거 접수나 일정을 다시 실행하지 않으며 다른 Task의 접수를 취소하지 않는다.
+- `task show`는 선택한 과거/현재 정의와 현재 활성 상태를 반환하고 환경변수 값은 숨긴다. `run show`와 `status`는 사람용 출력·JSON을 제공하고 선행 접수 식별자를 실제 순서에서 계산한다. `status --task`는 미완료 접수의 회차를 필터링하며 마지막 기록된 데몬 상태·관측 시각·2초 이상 오래된 관측 표시를 함께 제공한다. 기록된 running은 현재 생존의 보장으로 표시하지 않는다.
+- `logs`는 저장 stdout·stderr 원본 바이트를 Step 순서로 읽고, `--step`은 해당 Run의 Step만 선택한다. `--follow`는 독립 파일 offset으로 추가 바이트와 새 Step을 읽으며 Run 종료 또는 사용자 종료 신호에서 끝난다. 실제 gate로 막힌 실행 도중 첫 출력을 관측하고 gate 해제 뒤 추가 출력·마지막 Step·비UTF-8 바이트를 중복 없이 대조한다.
+- SC-41은 HOME/XDG 기본경로·명시 경로·0700·상대 파일·stdin, 성공 JSON/오류 stderr JSON과 코드0~6, 전체 변경/조회 명령, 실제 DB 쓰기 잠금과 중복 데몬을 확인한다. 데몬 부재 동안 정기 발행·외부 실행이 없으며 SIGSTOP 후 status 관측 시각이 고정되고 stale 표시가 생기는지 실제 CLI로 확인한다. 실행 중 데몬의 신규 접수 관측도 1초 이내 외부 검사 기록으로 대조한다.
+- 요구사항 13절에 맞춰 존재하지 않는 Run/Step의 resume는 코드4로 구분하고 실제 존재하지만 잘못된 단계는 코드6을 유지한다. SC-23의 missing-Step 하위 기대값만 바로잡았으며 시나리오 규범은 변경하지 않았다. 새 Task 취소도 공통 설정 해시 검사를 연결하고 SC-40 거부 목록에 포함했다.
+- README·CONTRIBUTING의 미구현 골격 설명을 현재 지원 범위로 국소 수정했다. SC-25·38·42와 L3 실제 업무 검증은 이 분기에서 미완이며 출시 완료로 보고하지 않는다. 문서 전용 빌드·링크 검사 도구는 저장소에 없어 새 도구를 도입하지 않고 수정한 명령과 연결 문서를 코드·E2E에 대조했다.
+- `scripts/verify.sh --fast` 확인 132·실패 0, 기본 full 확인 172·실패 0·TODO 6을 확인했다. SC-31·41을 포함한 구현 36개 시나리오의 모든 V가 통과하며 미구현으로 전체 full은 종료 1이다. 로그 `/tmp/cli-contract-fast2.log`, `/tmp/cli-contract-full.log`. 이후 다른 Task 접수 보존과 status 응답값 단정을 보강한 최종 전체 검증도 fast 132·full 172·실패 0·TODO 6으로 같은 결과를 확인했다. 최종 로그 `/tmp/cli-contract-final-full.log`.
+- 별도 복사 `/tmp/todoable-cli-stale-g7vi1q4w`에서 오래된 데몬 관측의 stale을 항상 false로 만드는 변형을 전체 `go test -race -count=1 ./...`로 실행했다. SC-41/V-02가 SIGSTOP 후 오래된 running을 최신으로 표시한 것을 검출해 실제 종료 1이다. 로그 `/tmp/cli-contract-stale-mutation.log`.
+- 별도 복사 `/tmp/todoable-cli-taskcancel-ohyl3j0v`에서 Task 취소 대상 조회를 첫 접수 한 건으로 제한하는 변형도 전체 race에서 실제 종료 1이다. SC-31/V-01이 누락 접수, V-02가 두 번째 접수 감사 실패를 건너뛴 잘못된 성공을 검출했다. 로그 `/tmp/cli-contract-taskcancel-mutation.log`. 두 변형은 원 작업트리에 적용하지 않았다.

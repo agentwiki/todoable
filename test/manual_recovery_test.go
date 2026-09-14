@@ -148,7 +148,7 @@ func resumeBudgetsAndArguments(t *testing.T) {
 	} {
 		f.rejected(t, 2, "validation_error", args...)
 	}
-	f.rejected(t, 6, "invalid_state", resumeArgs(id, "other-step", "retry")...)
+	f.rejected(t, 4, "not_found", resumeArgs(id, "other-step", "retry")...)
 	// Stopped blocks do not consume time, including a fresh CLI's wall clock.
 	before, e := time.ParseDuration(v["time_remaining"].(string))
 	if e != nil {
