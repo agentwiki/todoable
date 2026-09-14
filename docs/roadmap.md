@@ -144,3 +144,11 @@ YAML alias와 설치 `config.yaml`은 현재 지원하지 않고 명시적으로
 - Run 시간은 실행 단계 진입에서 시작해 단계 사이를 포함하여 연속 소비하며, 정지 확인된 차단에서 멈춘다. 동일 Store에서는 Go 단조 시계를 사용하고 영속 ticking_at으로 중단 경과 시간을 차감한다. 남은 시간이 없는 새 예약은 failed:run_timeout으로 끝내며 재시도는 거부한다. SC-23은 정지 확인 차단 동안 예산 정지 및 재시도 후 기존 호출·시간 소모의 보존을 확인한다. 취소·영 시간 예산 수동 확인 등 SC-38 전체 E2E가 아직 남아 있으므로 SC-38은 TODO로 유지한다.
 - `scripts/verify.sh --fast` 확인 122 통과. 최종 기본 full은 확인 136·실패 0·TODO 14이며 28개 구현 시나리오의 모든 V가 통과한다. 나머지 TODO로 full 전체는 실패한다. 로그 `/tmp/manual-recovery-fast-final.log`, `/tmp/manual-recovery-full-final.log`. 이번 묶음에서 L3 실환경 검증은 실행하지 않았다.
 - agent retry가 종료검사를 건너뛰게 한 변형을 `/tmp/todoable-manual-skipcheck-d7abf9zu` 별도 복사에서 전체 `go test -race -count=1 ./...`로 실행했다. SC-23/V-01·V-02 agent-retry가 원래 agent 다음 새 Step이 종료검사여야 한다는 단정으로 실패했다(종료 1). 로그 `/tmp/manual-recovery-mutation.log`; 변형은 원 worktree에 적용하지 않았다.
+
+## 독립 충돌 키 검증의 ready 순서 경합 수정 (2026-09-14)
+
+- 전체 검증 중 SC-09/V-02가 일시 실패했다. 그 최초 실패의 상세 원인은 보존된 testreport 출력만으로 단정하지 않는다. 별도 독립 재현에서는 free-0의 시작검사를 200ms 늦추자 free-1이 먼저 ready가 되었는데, 테스트가 free-0의 진입을 기다리면서 free-1의 gate를 열지 않아 교착하는 검증 경합을 확인했다. 제품의 ready 순서는 정상이다.
+- SC-09는 제출 순서 대신 실제 before에 진입한 free Run 집합이 가용 슬롯 수에 도달하는지 관측한다. 모든 gate를 해제한 뒤 각 Run 완료와 외부 산출물을 확인하고, 전체 before/after_done 이벤트의 동시 구간 수가 정지 미확인 슬롯을 포함한 상한 2를 넘지 않는지 추가로 대조한다. 병렬성·같은 자원 대기·정지 미확인 슬롯 유지 단정은 유지했다.
+- `scripts/verify.sh --fast` 확인 122 통과. 기본 full은 확인 111·실패 0·TODO 15이며 현재 27개 구현 시나리오의 모든 V가 통과한다. 로그 `/tmp/sc09-order-fast.log`, `/tmp/sc09-order-full.log`; 전체 full은 남은 TODO로 실패한다.
+- free-0 시작검사에 200ms 지연만 추가한 `/tmp/todoable-sc09-delayed-5qani39g` 별도 복사에서 전체 `go test -race -count=1 ./...`가 종료 0으로 통과했다(로그 `/tmp/sc09-order-delayed.log`). 병렬 순서 교란을 허용하는지 확인한 것이며 TODO 시나리오의 제품 완료를 뜻하지 않는다.
+- 전역 Run 예약 상한을 2에서 3으로 올린 `/tmp/todoable-sc09-overcap-hrlj05o6` 변형은 같은 전체 race 실행에서 SC-09/V-01이 실제 구간 3 대 허용 2, V-02가 2 대 허용 1을 검출해 실패한다. SC-20/V-02의 no-PID 슬롯 검증도 함께 실패했다. 로그 `/tmp/sc09-order-overcap.log`, 실제 종료 1. 제품 코드는 원 worktree에서 변경하지 않았다.

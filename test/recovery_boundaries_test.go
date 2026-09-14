@@ -103,16 +103,25 @@ func independentSlots(t *testing.T, unknown bool) {
 	if unknown {
 		capacity = 1
 	}
-	for i := range capacity {
-		waitExternal(t, f, fmt.Sprintf("free-%d", i), "before", 1)
-	}
-	for i := capacity; i < 3; i++ {
-		waitReady(t, f, subs[i]["run_id"].(string))
+	// Parallel preflight completion determines ready order, not submission order.
+	waitUntil(t, func() bool {
+		entered := 0
+		for _, event := range orderEvents(t, f) {
+			if strings.HasPrefix(event.Label, "free-") && event.Stage == "before" {
+				entered++
+			}
+		}
+		return entered >= capacity
+	})
+	for _, sub := range subs {
+		waitReady(t, f, sub["run_id"].(string))
 	}
 	time.Sleep(150 * time.Millisecond)
 	assertSlotBoundary(t, f, capacity, unknown)
+	for _, gate := range gates {
+		writeTest(t, gate, nil, 0600)
+	}
 	for i := range 3 {
-		writeTest(t, gates[i], nil, 0600)
 		r := completedRuns(t, f, subs[i], 1)
 		if r[0]["stage"] != "succeeded" {
 			t.Fatalf("unrelated run did not finish %v", r)
@@ -129,6 +138,32 @@ func independentSlots(t *testing.T, unknown bool) {
 		expected = append(expected, expectedOrderRun{subs[i]["run_id"].(string), fmt.Sprintf("free-%d", i), 1, stages})
 	}
 	assertOrderExecutions(t, f, expected)
+	active := map[string]bool{}
+	peak := 0
+	for _, event := range orderEvents(t, f) {
+		if !strings.HasPrefix(event.Label, "free-") {
+			continue
+		}
+		switch event.Stage {
+		case "before":
+			if active[event.RunID] {
+				t.Fatalf("duplicate changing interval %v", event)
+			}
+			active[event.RunID] = true
+			if len(active) > capacity {
+				t.Fatalf("external intervals plus unconfirmed slot exceeded cap: active=%v unknown=%v", active, unknown)
+			}
+			peak = max(peak, len(active))
+		case "after_done":
+			if !active[event.RunID] {
+				t.Fatalf("missing changing interval %v", event)
+			}
+			delete(active, event.RunID)
+		}
+	}
+	if len(active) != 0 || peak != capacity {
+		t.Fatalf("incomplete parallel intervals active=%v peak=%d want=%d", active, peak, capacity)
+	}
 	var held int
 	if e := f.database(t).QueryRow("SELECT count(*) FROM run_schedule WHERE slot_held=1").Scan(&held); e != nil || held != map[bool]int{false: 0, true: 1}[unknown] {
 		t.Fatalf("remaining held slots %d %v", held, e)
